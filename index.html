@@ -315,6 +315,7 @@
 
         let currentUid = null;
         let currentRoomId = null;
+        let isProcessingRound = false;
 
         try {
             const app = initializeApp(firebaseConfig);
@@ -423,7 +424,8 @@
                     renderPlayers(players);
                     
                     // Check if both players have played their card
-                    if (players && Object.values(players).every(p => p.playedCard !== null)) {
+                    if (players && Object.values(players).every(p => p.playedCard !== null) && !isProcessingRound) {
+                        isProcessingRound = true; // Prevents this from firing multiple times
                         setTimeout(() => revealCards(room), 1000);
                     }
                 });
@@ -520,36 +522,45 @@
                     }
                 });
                 
-                // After reveal, process results and move to next question
-                setTimeout(() => processRoundResults(room), 2500);
+                setTimeout(() => processRoundResults(), 2500);
             }
 
-            function processRoundResults(room) {
+            function processRoundResults() {
                  const roomRef = ref(db, `games/${currentRoomId}`);
                  runTransaction(roomRef, (currentRoom) => {
                      if (!currentRoom) return;
-                     const correctAnswer = currentRoom.currentQuestion.answer;
+                     
+                     const needsProcessing = Object.values(currentRoom.players || {}).some(p => p.playedCard !== null);
+                     if (!needsProcessing) {
+                         return; 
+                     }
+
+                     const correctAnswer = (currentRoom.currentQuestion.answer || '').toLowerCase();
                      Object.keys(currentRoom.players).forEach(uid => {
                          const player = currentRoom.players[uid];
-                         const isCorrect = player.playedCard.toLowerCase() === correctAnswer.toLowerCase();
-                         if (isCorrect) {
-                             player.score += 10;
-                         } else {
-                             player.money -= 20;
+                         if (player && player.playedCard) {
+                            const isCorrect = player.playedCard.toLowerCase() === correctAnswer;
+                            if (isCorrect) {
+                                player.score += 10;
+                            } else {
+                                player.money -= 20;
+                            }
                          }
                      });
                      return currentRoom;
-                 }).then(() => {
-                     // Check for game over (money) before setting next question
+                 }).then((result) => {
+                     if (!result.committed) return;
                      const playerRef = ref(db, `games/${currentRoomId}/players`);
                      get(playerRef).then(snapshot => {
                          const players = snapshot.val();
-                         if (Object.values(players).some(p => p.money <= 0)) {
+                         if (players && Object.values(players).some(p => p.money <= 0)) {
                              set(ref(db, `games/${currentRoomId}/gameState`), 'FINISHED');
                          } else {
                              setNextQuestion(currentRoomId);
                          }
                      });
+                 }).catch((error) => {
+                     console.log("Transaction aborted, likely handled by another client. This is normal.", error);
                  });
             }
 
@@ -571,17 +582,20 @@
                             const randomQuestionId = unaskedQuestionIds[Math.floor(Math.random() * unaskedQuestionIds.length)];
                             const nextQ = allQuestions[randomQuestionId];
                             
-                            // Deal hands
-                            const allOptions = [nextQ.answer, ...nextQ.options];
+                            // More robust check for options
+                            const distractorOptions = Array.isArray(nextQ.options) && nextQ.options.length >= 2 
+                                ? nextQ.options 
+                                : ["Wrong Answer A", "Wrong Answer B"];
+
                             Object.keys(room.players).forEach(uid => {
                                 const player = room.players[uid];
-                                // Create a hand with the correct answer + 2 random distractors
-                                let handOptions = [...nextQ.options];
-                                // Shuffle options
+                                let handOptions = [...distractorOptions];
+                                // Shuffle distractors
                                 for (let i = handOptions.length - 1; i > 0; i--) {
                                     const j = Math.floor(Math.random() * (i + 1));
                                     [handOptions[i], handOptions[j]] = [handOptions[j], handOptions[i]];
                                 }
+                                // Create hand: correct answer + 2 random distractors
                                 player.hand = [nextQ.answer, ...handOptions.slice(0, 2)];
                                 // Shuffle final hand
                                 for (let i = player.hand.length - 1; i > 0; i--) {
@@ -599,6 +613,7 @@
                         }
                         return room;
                     });
+                    isProcessingRound = false; // Reset for the next round
                 } catch (error) { console.error("Failed to set next question:", error); }
             }
             
