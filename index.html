@@ -274,7 +274,7 @@
         };
         
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue, onDisconnect, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getDatabase, ref, set, onValue, onDisconnect, runTransaction, serverTimestamp, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         
         // --- DOM Elements & State ---
@@ -335,6 +335,7 @@
             async function findOrCreateRoom(playerData) {
                 showScreen('finding');
                 const gamesRef = ref(db, 'games');
+                let isGameStarter = false; // Flag to check if this client is starting the game
                 
                 try {
                     await runTransaction(gamesRef, (games) => {
@@ -357,6 +358,7 @@
                             // If we are the second player, start the game
                             if (Object.keys(games[joinedRoomId].players).length === 2) {
                                 games[joinedRoomId].gameState = 'IN_PROGRESS';
+                                isGameStarter = true; // This client will trigger the first question
                             }
                             currentRoomId = joinedRoomId;
                         } else {
@@ -379,6 +381,11 @@
                         const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}`);
                         onDisconnect(playerRef).remove();
                         listenToRoomState(currentRoomId);
+
+                        // If this client started the game, fetch and set the first question
+                        if (isGameStarter) {
+                            await setFirstQuestion(currentRoomId);
+                        }
                     } else {
                         throw new Error("Failed to get a room ID from transaction.");
                     }
@@ -386,6 +393,39 @@
                     console.error("Could not find or create room:", error);
                     alert("Error finding a game room.");
                     showScreen('login');
+                }
+            }
+            
+            async function setFirstQuestion(roomId) {
+                try {
+                    const allQuestionsRef = ref(db, 'questions');
+                    const snapshot = await get(allQuestionsRef);
+                    const questions = snapshot.val();
+                    
+                    if (!questions) {
+                        console.error("No questions found in the '/questions' path in Firebase.");
+                        const roomQuestionRef = ref(db, `games/${roomId}/currentQuestion`);
+                        await set(roomQuestionRef, {
+                            text: "Error: No questions found in the question bank!",
+                            answer: "",
+                            startTime: serverTimestamp()
+                        });
+                        return;
+                    }
+
+                    const questionIds = Object.keys(questions);
+                    const randomQuestionId = questionIds[Math.floor(Math.random() * questionIds.length)];
+                    const nextQuestion = questions[randomQuestionId];
+
+                    const roomQuestionRef = ref(db, `games/${roomId}/currentQuestion`);
+                    await set(roomQuestionRef, {
+                        text: nextQuestion.text,
+                        answer: nextQuestion.answer,
+                        startTime: serverTimestamp()
+                    });
+
+                } catch (error) {
+                    console.error("Failed to set the first question:", error);
                 }
             }
             
@@ -577,4 +617,5 @@
     </script>
 </body>
 </html>
+
 
