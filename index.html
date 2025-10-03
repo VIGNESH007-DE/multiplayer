@@ -330,6 +330,7 @@
         let isProcessingRound = false;
         let questionTimer = null;
         let lastKnownRoomData = null;
+        let allQuestionsBank = null;
         let lastQuestionStartTime = null;
         const QUESTION_TIME = 30000; // 30 seconds
 
@@ -398,7 +399,16 @@
                         const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}`);
                         onDisconnect(playerRef).remove();
                         listenToRoomState(currentRoomId);
-                        if (isGameStarter) await setNextQuestion(currentRoomId, true);
+                        if (isGameStarter) {
+                            const allQuestionsRef = ref(db, 'questions');
+                            const snapshot = await get(allQuestionsRef);
+                            if(snapshot.exists()) {
+                                allQuestionsBank = snapshot.val();
+                                await setNextQuestion(currentRoomId, true);
+                            } else {
+                                console.error("Question bank is empty in Firebase!");
+                            }
+                        }
                     } else { throw new Error("Failed to get a room ID from transaction."); }
                 } catch (error) { console.error("Could not find or create room:", error); alert("Error finding a game room."); showScreen('login'); }
             }
@@ -430,7 +440,12 @@
                     }
 
                     switch (gameState) {
-                        case 'IN_PROGRESS': showScreen('game'); break;
+                        case 'IN_PROGRESS': 
+                            if (!allQuestionsBank) { // Fetch question bank if missing (e.g., for player 2)
+                                get(ref(db, 'questions')).then(snapshot => { if (snapshot.exists()) allQuestionsBank = snapshot.val(); });
+                            }
+                            showScreen('game'); 
+                            break;
                         case 'FINISHED':
                             stopTimer();
                             renderFinalScores(players);
@@ -446,6 +461,7 @@
                     renderPlayers(players);
                     
                     if (gameState === 'IN_PROGRESS' && currentQuestion.startTime && currentQuestion.startTime !== lastQuestionStartTime) {
+                        isProcessingRound = false;
                         lastQuestionStartTime = currentQuestion.startTime;
                         startTimer();
                     }
@@ -453,7 +469,8 @@
                     if (players && Object.values(players).every(p => p.playedCard !== null) && !isProcessingRound) {
                         isProcessingRound = true;
                         stopTimer();
-                        setTimeout(() => revealCards(room), 1000);
+                        revealCards(room);
+                        setTimeout(attemptRoundEndTransaction, 2500);
                     }
                     lastKnownRoomData = room;
                 });
@@ -466,7 +483,7 @@
 
                 const interval = setInterval(() => {
                     timeLeft--;
-                    timerDisplay.textContent = timeLeft;
+                    timerDisplay.textContent = timeLeft > 0 ? timeLeft : 0;
                     if (timeLeft <= 0) clearInterval(interval);
                 }, 1000);
 
@@ -544,8 +561,8 @@
                     if (who === 'player') playedCardsArea.appendChild(existingCard);
                     else playedCardsArea.prepend(existingCard);
                 }
-
-                const frontText = who === 'opponent' ? '???' : cardText;
+                
+                const frontText = (who === 'opponent' && !isProcessingRound) ? '???' : (cardText === "TIMED_OUT" ? "Too Slow!" : cardText);
                 existingCard.innerHTML = `<div class="card-face card-front">${frontText}</div><div class="card-face card-back"></div>`;
             }
 
@@ -576,81 +593,56 @@
                         backFace.textContent = isCorrect ? '✔️' : '❌';
                     }
                 });
-                
-                setTimeout(() => processRoundResults(), 2500);
             }
 
-            function processRoundResults() {
-                 const roomRef = ref(db, `games/${currentRoomId}`);
-                 runTransaction(roomRef, (currentRoom) => {
-                     if (!currentRoom) return;
-                     const needsProcessing = Object.values(currentRoom.players || {}).some(p => p.playedCard !== null);
-                     if (!needsProcessing) return; 
-
-                     const correctAnswer = (currentRoom.currentQuestion.answer || '').toLowerCase();
-                     Object.keys(currentRoom.players).forEach(uid => {
-                         const player = currentRoom.players[uid];
-                         if (player && player.playedCard) {
-                            if (player.playedCard === "TIMED_OUT") {
-                                player.money -= 10;
-                            } else {
-                                const isCorrect = player.playedCard.toLowerCase() === correctAnswer;
-                                if (isCorrect) player.score += 10;
-                                else player.money -= 20;
-                            }
-                         }
-                     });
-                     return currentRoom;
-                 }).then((result) => {
-                     if (!result.committed) return;
-                     const playerRef = ref(db, `games/${currentRoomId}/players`);
-                     get(playerRef).then(snapshot => {
-                         const players = snapshot.val();
-                         if (players && Object.values(players).some(p => p.money <= 0)) {
-                             set(ref(db, `games/${currentRoomId}/gameState`), 'FINISHED');
-                         } else {
-                             setNextQuestion(currentRoomId);
-                         }
-                     });
-                 }).catch((error) => {
-                     console.log("Transaction likely handled by other client.", error.message);
-                 });
-            }
-
-            async function setNextQuestion(roomId, isFirstQuestion = false) {
+            async function attemptRoundEndTransaction() {
+                const roomRef = ref(db, `games/${currentRoomId}`);
                 try {
-                    const allQuestionsRef = ref(db, 'questions');
-                    const questionsSnapshot = await get(allQuestionsRef);
-                    const allQuestions = questionsSnapshot.val();
-                    if (!allQuestions) throw new Error("Question bank is empty.");
-
-                    const roomRef = ref(db, `games/${roomId}`);
                     await runTransaction(roomRef, (room) => {
-                        if (!room || (room.gameState !== 'IN_PROGRESS' && !isFirstQuestion)) return;
+                        if (!room || room.lastProcessedRound === room.currentQuestion.startTime) {
+                            return; // Abort if room is gone or this round was already processed
+                        }
+
+                        // --- SCORING & STATE UPDATE ---
+                        const correctAnswer = (room.currentQuestion.answer || '').toLowerCase();
+                        let isGameOver = false;
+                        Object.keys(room.players).forEach(uid => {
+                            const player = room.players[uid];
+                            if (player && player.playedCard) {
+                                if (player.playedCard === "TIMED_OUT") player.money -= 10;
+                                else {
+                                    const isCorrect = player.playedCard.toLowerCase() === correctAnswer;
+                                    if (isCorrect) player.score += 10;
+                                    else player.money -= 20;
+                                }
+                                if (player.money <= 0) isGameOver = true;
+                            }
+                        });
                         
+                        room.lastProcessedRound = room.currentQuestion.startTime;
+
+                        if (isGameOver) {
+                            room.gameState = 'FINISHED';
+                            return room;
+                        }
+
+                        // --- SET NEXT QUESTION ---
+                        if (!allQuestionsBank) return room; // Can't set next question without the bank
+
                         const askedIds = room.askedQuestions ? Object.keys(room.askedQuestions) : [];
-                        const unaskedQuestionIds = Object.keys(allQuestions).filter(id => !askedIds.includes(id));
+                        const unaskedQuestionIds = Object.keys(allQuestionsBank).filter(id => !askedIds.includes(id));
 
                         if (unaskedQuestionIds.length > 0) {
                             const randomQuestionId = unaskedQuestionIds[Math.floor(Math.random() * unaskedQuestionIds.length)];
-                            const nextQ = allQuestions[randomQuestionId];
-                            
-                            const distractorOptions = Array.isArray(nextQ.options) && nextQ.options.length >= 2 
-                                ? nextQ.options 
-                                : ["Wrong Answer A", "Wrong Answer B"];
+                            const nextQ = allQuestionsBank[randomQuestionId];
+                            const distractors = (Array.isArray(nextQ.options) && nextQ.options.length >= 2) ? nextQ.options : ["Wrong A", "Wrong B"];
 
                             Object.keys(room.players).forEach(uid => {
                                 const player = room.players[uid];
-                                let handOptions = [...distractorOptions];
-                                for (let i = handOptions.length - 1; i > 0; i--) {
-                                    const j = Math.floor(Math.random() * (i + 1));
-                                    [handOptions[i], handOptions[j]] = [handOptions[j], handOptions[i]];
-                                }
+                                let handOptions = [...distractors];
+                                for (let i = handOptions.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [handOptions[i], handOptions[j]] = [handOptions[j], handOptions[i]]; }
                                 player.hand = [nextQ.answer, ...handOptions.slice(0, 2)];
-                                for (let i = player.hand.length - 1; i > 0; i--) {
-                                    const j = Math.floor(Math.random() * (i + 1));
-                                    [player.hand[i], player.hand[j]] = [player.hand[j], player.hand[i]];
-                                }
+                                for (let i = player.hand.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [player.hand[i], player.hand[j]] = [player.hand[j], player.hand[i]]; }
                                 player.playedCard = null;
                             });
 
@@ -658,12 +650,13 @@
                             if (!room.askedQuestions) room.askedQuestions = {};
                             room.askedQuestions[randomQuestionId] = true;
                         } else {
-                            room.gameState = 'FINISHED';
+                            room.gameState = 'FINISHED'; // No more questions
                         }
                         return room;
                     });
-                    isProcessingRound = false;
-                } catch (error) { console.error("Failed to set next question:", error); }
+                } catch (error) {
+                    console.log("Transaction to process round failed, likely handled by the other client. This is normal.", error.message);
+                }
             }
             
              function renderFinalScores(players) {
