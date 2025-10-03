@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boss Battle - Multiplayer Quiz</title>
+    <style>
+        /* Basic Setup and Theming */
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root {
+            --background-color: #1a1a2e;
+            --primary-color: #16213e;
+            --secondary-color: #0f3460;
+            --accent-color: #e94560;
+            --font-color: #dcdcdc;
+            --hp-green: #4caf50;
+            --hp-yellow: #ffc107;
+            --hp-red: #f44336;
+            --border-radius: 8px;
+            --timer-color: #00bcd4;
+        }
+
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: var(--background-color);
+            color: var(--font-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px;
+            background-color: var(--primary-color);
+            border-radius: var(--border-radius);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Screens */
+        #login-screen, #lobby-screen, #game-screen, #final-scores-screen {
+            display: none; /* Hide all screens initially */
+            text-align: center;
+        }
+        
+        #login-screen.active, #lobby-screen.active, #game-screen.active, #final-scores-screen.active {
+            display: block;
+        }
+
+        /* Login Screen */
+        #login-screen h1 {
+            color: var(--accent-color);
+            text-shadow: 2px 2px #000;
+        }
+
+        .login-form input, .login-form button {
+            font-family: 'Press Start 2P', cursive;
+            display: block;
+            width: 80%;
+            max-width: 300px;
+            margin: 15px auto;
+            padding: 15px;
+            border-radius: var(--border-radius);
+        }
+
+        .login-form input {
+            border: 2px solid var(--secondary-color);
+            background-color: var(--background-color);
+            color: var(--font-color);
+            font-size: 14px;
+        }
+
+        .login-form button {
+            border: none;
+            background-color: var(--accent-color);
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+        .login-form button:hover {
+            transform: scale(1.05);
+            background-color: #ff5a79;
+        }
+        
+        /* Lobby Screen */
+        #lobby-players-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+            min-height: 50px;
+        }
+        .lobby-player-tag {
+            background-color: var(--secondary-color);
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        /* Game Screen */
+        #boss-section {
+            margin-bottom: 30px;
+            position: relative;
+        }
+        #boss-name { font-size: 24px; color: var(--accent-color); }
+        #boss-sprite {
+            font-size: 100px;
+            margin: 10px 0;
+            transition: transform 0.1s;
+        }
+        #boss-sprite.shake { animation: shake 0.5s; }
+
+        /* Timer Bar */
+        #timer-container {
+            width: 100%;
+            height: 10px;
+            background-color: var(--secondary-color);
+            border-radius: var(--border-radius);
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        #timer-bar {
+            height: 100%;
+            width: 100%;
+            background-color: var(--timer-color);
+            transition: width 0.2s linear;
+        }
+
+        /* QA Section */
+        #qa-section {
+            background-color: var(--secondary-color);
+            padding: 20px;
+            border-radius: var(--border-radius);
+            margin-bottom: 30px;
+        }
+        #question-text { font-size: 18px; line-height: 1.6; min-height: 50px; }
+        #answer-form { display: flex; justify-content: center; gap: 10px; margin-top: 20px; }
+        #answer-input {
+            padding: 10px;
+            flex-grow: 1;
+            max-width: 400px;
+        }
+        #answer-form button { padding: 10px 20px; }
+
+        /* Players Section */
+        #players-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .player-card {
+            background-color: var(--secondary-color);
+            padding: 15px;
+            border-radius: var(--border-radius);
+            border-left: 5px solid var(--accent-color);
+            text-align: left;
+        }
+        .player-card.current-player { border-left-color: var(--hp-yellow); }
+        .player-card.has-answered { opacity: 0.6; border-left-color: #666; }
+        .player-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .player-name { font-size: 14px; }
+        .player-score { font-size: 14px; color: var(--hp-yellow); }
+
+        /* Health Bars */
+        .hp-bar-container { width: 100%; height: 20px; background-color: #333; border-radius: 10px; overflow: hidden; border: 2px solid #000; }
+        .hp-bar { height: 100%; width: 100%; border-radius: 8px; background-color: var(--hp-green); transition: width 0.5s ease-in-out, background-color 0.5s ease-in-out; }
+
+        /* Final Scores Screen */
+        #final-scores-list { text-align: left; max-width: 400px; margin: 20px auto; }
+        .score-item { display: flex; justify-content: space-between; padding: 10px; background-color: var(--secondary-color); border-radius: var(--border-radius); margin-bottom: 10px; font-size: 16px; }
+        .score-item:first-child { background-color: var(--hp-yellow); color: #000; } /* Winner */
+
+        /* Overlays */
+        #game-over-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.8); display: none; justify-content: center; align-items: center; z-index: 100; }
+        #game-over-text { font-size: 48px; text-shadow: 4px 4px #000; }
+        #game-over-text.win { color: var(--hp-green); }
+        #game-over-text.lose { color: var(--accent-color); }
+        
+        /* Animations */
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); } 20%, 40%, 60%, 80% { transform: translateX(5px); } }
+        @keyframes red-flash { 0%, 100% { background-color: var(--background-color); } 50% { background-color: darkred; } }
+        body.player-hit { animation: red-flash 0.3s linear; }
+        .attack-animation { position: absolute; font-size: 40px; opacity: 0; z-index: 50; pointer-events: none; }
+        .attack-animation.fireball { color: orange; animation: fireball-fly 0.7s ease-out forwards; }
+        @keyframes fireball-fly { 0% { opacity: 1; transform: translate(0, 0) scale(0.5); } 100% { opacity: 0; transform: translate(var(--target-x), var(--target-y)) scale(1.5); } }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Login Screen -->
+        <div id="login-screen" class="active">
+            <h1>Boss Battle Quiz</h1>
+            <div class="login-form">
+                <input type="text" id="student-name" placeholder="Enter Your Name">
+                <input type="text" id="school-code" placeholder="Enter School Code">
+                <button id="join-game-btn">Join Game</button>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobby-screen">
+            <h2>Game Lobby</h2>
+            <p>Waiting for the Quiz Master to start the game...</p>
+            <h3>Players Joined:</h3>
+            <div id="lobby-players-list"></div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen">
+            <div id="boss-section">
+                <div id="boss-sprite">👹</div>
+                <h2 id="boss-name">Quiz Master</h2>
+                <div class="hp-bar-container">
+                    <div class="hp-bar" id="boss-hp-bar"></div>
+                </div>
+            </div>
+            <div id="qa-section">
+                <div id="timer-container"><div id="timer-bar"></div></div>
+                <p id="question-text">Loading question...</p>
+                <form id="answer-form">
+                    <input type="text" id="answer-input" placeholder="Type your answer here..." autocomplete="off">
+                    <button type="submit">Attack!</button>
+                </form>
+            </div>
+            <h3>Players</h3>
+            <div id="players-section"></div>
+        </div>
+        
+        <!-- Final Scores Screen -->
+        <div id="final-scores-screen">
+            <h2>Game Over!</h2>
+            <h3>Final Scores:</h3>
+            <div id="final-scores-list"></div>
+        </div>
+
+        <!-- Game Over Overlay (for boss/player defeat) -->
+        <div id="game-over-overlay">
+            <h1 id="game-over-text"></h1>
+        </div>
+    </div>
+    
+    <div id="animation-container"></div>
+
+    <script type="module">
+        const firebaseConfig = {
+            apiKey: "AIzaSyDL3QZhvVDiml0bH7ZZlaO1RkcWdedjKg4",
+            authDomain: "bossbattlequiz.firebaseapp.com",
+            databaseURL: "https://bossbattlequiz-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "bossbattlequiz",
+            storageBucket: "bossbattlequiz.appspot.com",
+            messagingSenderId: "629524990741",
+            appId: "1:629524990741:web:5bd5b16409b51d847a371c",
+            measurementId: "G-1SSFHVFCF1"
+        };
+        
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getDatabase, ref, set, onValue, onDisconnect, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        
+        // --- DOM Elements & State ---
+        const screens = {
+            login: document.getElementById('login-screen'),
+            lobby: document.getElementById('lobby-screen'),
+            game: document.getElementById('game-screen'),
+            scores: document.getElementById('final-scores-screen'),
+        };
+        const joinGameBtn = document.getElementById('join-game-btn');
+        const studentNameInput = document.getElementById('student-name');
+        const schoolCodeInput = document.getElementById('school-code');
+        const lobbyPlayersList = document.getElementById('lobby-players-list');
+        const answerForm = document.getElementById('answer-form');
+        const answerInput = document.getElementById('answer-input');
+        const bossHpBar = document.getElementById('boss-hp-bar');
+        const bossSprite = document.getElementById('boss-sprite');
+        const questionText = document.getElementById('question-text');
+        const playersSection = document.getElementById('players-section');
+        const finalScoresList = document.getElementById('final-scores-list');
+        const gameOverOverlay = document.getElementById('game-over-overlay');
+        const gameOverText = document.getElementById('game-over-text');
+        const timerBar = document.getElementById('timer-bar');
+
+        let currentUid = null;
+        let currentQuestionAnswer = '';
+        let questionTimerInterval = null;
+        const QUESTION_TIME = 15000; // 15 seconds in milliseconds
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getDatabase(app);
+            const auth = getAuth(app);
+            
+            // --- Screen Management ---
+            function showScreen(screenName) {
+                Object.values(screens).forEach(s => s.classList.remove('active'));
+                if (screens[screenName]) {
+                    screens[screenName].classList.add('active');
+                }
+            }
+            
+            // --- LOGIN ---
+            joinGameBtn.addEventListener('click', async () => {
+                const name = studentNameInput.value.trim();
+                const schoolCode = schoolCodeInput.value.trim();
+                if (!name || !schoolCode) return alert("Please enter both name and school code.");
+
+                try {
+                    const userCredential = await signInAnonymously(auth);
+                    currentUid = userCredential.user.uid;
+                    const playerRef = ref(db, 'players/' + currentUid);
+                    
+                    await set(playerRef, { name, schoolCode, hp: 100, score: 0, hasAnsweredThisRound: false });
+                    onDisconnect(playerRef).remove();
+                    
+                    listenToGameState();
+                } catch (error) {
+                    console.error("Error joining game:", error);
+                    alert("Could not join the game.");
+                }
+            });
+
+            // --- GAME STATE LISTENER ---
+            function listenToGameState() {
+                const gameStateRef = ref(db, 'gameState');
+                const bossHpRef = ref(db, 'bossHP');
+                const currentQuestionRef = ref(db, 'currentQuestion');
+                const playersRef = ref(db, 'players');
+
+                onValue(gameStateRef, (snapshot) => {
+                    const state = snapshot.val();
+                    switch (state) {
+                        case 'IN_PROGRESS':
+                            showScreen('game');
+                            break;
+                        case 'FINISHED':
+                            onValue(playersRef, (playerSnap) => { // Get final scores
+                                renderFinalScores(playerSnap.val());
+                                showScreen('scores');
+                            }, { onlyOnce: true });
+                            break;
+                        case 'LOBBY':
+                        default:
+                            showScreen('lobby');
+                            break;
+                    }
+                });
+                
+                // These listeners are for things that happen *during* the game
+                onValue(bossHpRef, (snapshot) => updateBossHp(snapshot.val()));
+                onValue(currentQuestionRef, (snapshot) => updateQuestion(snapshot.val()));
+                onValue(playersRef, (snapshot) => {
+                    renderPlayers(snapshot.val(), 'game'); // for game screen
+                    renderPlayers(snapshot.val(), 'lobby'); // for lobby screen
+                    checkAllPlayersDefeated(snapshot.val());
+                });
+            }
+
+            // --- RENDER FUNCTIONS ---
+            function renderPlayers(players, context) {
+                const container = context === 'game' ? playersSection : lobbyPlayersList;
+                container.innerHTML = '';
+                if (!players) return;
+
+                Object.entries(players).forEach(([uid, data]) => {
+                    if (context === 'lobby') {
+                        const tag = document.createElement('div');
+                        tag.className = 'lobby-player-tag';
+                        tag.textContent = data.name;
+                        container.appendChild(tag);
+                    } else { // 'game' context
+                        const card = document.createElement('div');
+                        card.className = 'player-card';
+                        if (uid === currentUid) card.classList.add('current-player');
+                        if (data.hasAnsweredThisRound) card.classList.add('has-answered');
+                        
+                        card.innerHTML = `
+                            <div class="player-info">
+                                <span class="player-name">${data.name} (${data.schoolCode})</span>
+                                <span class="player-score">Score: ${data.score}</span>
+                            </div>
+                            <div class="hp-bar-container">
+                                <div class="hp-bar" style="width: ${data.hp}%"></div>
+                            </div>`;
+                        container.appendChild(card);
+                        updateHpBar(card.querySelector('.hp-bar'), data.hp);
+                    }
+                });
+            }
+
+            function renderFinalScores(players) {
+                finalScoresList.innerHTML = '';
+                if (!players) return;
+                const sortedPlayers = Object.values(players).sort((a, b) => b.score - a.score);
+                sortedPlayers.forEach((player, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'score-item';
+                    item.innerHTML = `<span>${index + 1}. ${player.name}</span><span>${player.score} pts</span>`;
+                    finalScoresList.appendChild(item);
+                });
+            }
+
+            // --- UI & DATA UPDATERS ---
+            function updateBossHp(hp) {
+                const maxHp = 500;
+                const hpPercentage = ((hp || 0) / maxHp) * 100;
+                updateHpBar(bossHpBar, hpPercentage);
+                if (hp <= 0 && gameOverOverlay.style.display === 'none') {
+                    showDefeatMessage(true); // Players win
+                }
+            }
+
+            function updateQuestion(question) {
+                clearInterval(questionTimerInterval); // Stop previous timer
+                if (question && question.text) {
+                    questionText.textContent = question.text;
+                    currentQuestionAnswer = question.answer;
+                    answerInput.disabled = false;
+                    
+                    const startTime = question.startTime;
+                    questionTimerInterval = setInterval(() => {
+                        const elapsed = Date.now() - startTime;
+                        const remaining = QUESTION_TIME - elapsed;
+                        const percentage = (remaining / QUESTION_TIME) * 100;
+                        timerBar.style.width = `${Math.max(0, percentage)}%`;
+                        if (remaining <= 0) {
+                            clearInterval(questionTimerInterval);
+                            answerInput.disabled = true;
+                        }
+                    }, 100);
+                } else {
+                    questionText.textContent = "Waiting for the next question...";
+                    answerInput.disabled = true;
+                    timerBar.style.width = '100%';
+                }
+            }
+
+            function updateHpBar(element, percentage) {
+                element.style.width = `${Math.max(0, percentage)}%`;
+                if (percentage <= 25) element.style.backgroundColor = 'var(--hp-red)';
+                else if (percentage <= 50) element.style.backgroundColor = 'var(--hp-yellow)';
+                else element.style.backgroundColor = 'var(--hp-green)';
+            }
+            
+            // --- GAME LOGIC ---
+            answerForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const submittedAnswer = answerInput.value.trim();
+                if (!submittedAnswer || answerInput.disabled) return;
+                
+                const questionRef = ref(db, 'currentQuestion');
+                onValue(questionRef, (snapshot) => { // Get latest question start time
+                    const questionData = snapshot.val();
+                    if (!questionData || !questionData.startTime) return;
+                    
+                    const timeElapsed = Date.now() - questionData.startTime;
+                    const isCorrect = submittedAnswer.toLowerCase() === currentQuestionAnswer.toLowerCase();
+                    handleAnswer(isCorrect, timeElapsed);
+                }, { onlyOnce: true });
+
+                answerInput.value = '';
+                answerInput.disabled = true; // Prevent re-submission
+            });
+
+            function handleAnswer(isCorrect, timeElapsed) {
+                const playerRef = ref(db, `players/${currentUid}`);
+                runTransaction(playerRef, (player) => {
+                    if (player && !player.hasAnsweredThisRound) {
+                        player.hasAnsweredThisRound = true;
+                        if (isCorrect) {
+                            // Points based on time. Faster is better.
+                            const pointsGained = Math.max(1, Math.round(10 * ((QUESTION_TIME - timeElapsed) / QUESTION_TIME)));
+                            player.score += pointsGained;
+                            // Also damage boss in separate transaction
+                            runTransaction(ref(db, 'bossHP'), (hp) => (hp || 0) - 10);
+                            
+                            // Client-side animations
+                            playAttackAnimation();
+                            bossSprite.classList.add('shake');
+                            setTimeout(() => bossSprite.classList.remove('shake'), 500);
+                        } else {
+                            player.hp = Math.max(0, player.hp - 10);
+                            
+                            document.body.classList.add('player-hit');
+                            setTimeout(() => document.body.classList.remove('player-hit'), 300);
+                        }
+                    }
+                    return player;
+                });
+            }
+            
+            function checkAllPlayersDefeated(players) {
+                if (!players || Object.keys(players).length === 0) return;
+                if (Object.values(players).every(p => p.hp <= 0)) {
+                    if (gameOverOverlay.style.display === 'none') showDefeatMessage(false);
+                }
+            }
+            
+            function showDefeatMessage(playersWon) {
+                 gameOverText.textContent = playersWon ? "Players Win!" : "Boss Wins!";
+                 gameOverText.className = playersWon ? 'win' : 'lose';
+                 gameOverOverlay.style.display = 'flex';
+            }
+            
+            function playAttackAnimation() {
+                const fireball = document.createElement('div');
+                fireball.className = 'attack-animation fireball';
+                fireball.textContent = '🔥';
+
+                const playerCard = document.querySelector('.player-card.current-player');
+                const startRect = playerCard ? playerCard.getBoundingClientRect() : {top: window.innerHeight - 50, left: window.innerWidth / 2};
+                const endRect = bossSprite.getBoundingClientRect();
+                
+                const startX = startRect.left + startRect.width / 2;
+                const startY = startRect.top + startRect.height / 2;
+                const endX = endRect.left + endRect.width / 2;
+                const endY = endRect.top + endRect.height / 2;
+                
+                fireball.style.position = 'fixed';
+                fireball.style.left = `${startX}px`;
+                fireball.style.top = `${startY}px`;
+
+                document.documentElement.style.setProperty('--target-x', `${endX - startX}px`);
+                document.documentElement.style.setProperty('--target-y', `${endY - startY}px`);
+
+                document.getElementById('animation-container').appendChild(fireball);
+                setTimeout(() => fireball.remove(), 700);
+            }
+
+        } catch (error) {
+            console.error("Firebase Initialization Error:", error);
+            showScreen('login');
+            alert("Configuration Error: Could not connect to Firebase.");
+        }
+    </script>
+</body>
+</html>
+
