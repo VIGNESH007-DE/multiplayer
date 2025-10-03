@@ -335,15 +335,13 @@
             async function findOrCreateRoom(playerData) {
                 showScreen('finding');
                 const gamesRef = ref(db, 'games');
-                let isGameStarter = false; // Flag to check if this client is starting the game
+                let isGameStarter = false;
                 
                 try {
                     await runTransaction(gamesRef, (games) => {
                         if (!games) games = {};
-                        
                         let joinedRoomId = null;
                         
-                        // Find a room to join
                         for (const [roomId, roomData] of Object.entries(games)) {
                             const players = roomData.players || {};
                             if (roomData.gameState === 'LOBBY' && Object.keys(players).length < 2) {
@@ -353,24 +351,20 @@
                         }
 
                         if (joinedRoomId) {
-                            // Join the found room
                             games[joinedRoomId].players[currentUid] = { ...playerData, hp: 100, score: 0, hasAnsweredThisRound: false };
-                            // If we are the second player, start the game
                             if (Object.keys(games[joinedRoomId].players).length === 2) {
                                 games[joinedRoomId].gameState = 'IN_PROGRESS';
-                                isGameStarter = true; // This client will trigger the first question
+                                isGameStarter = true;
                             }
                             currentRoomId = joinedRoomId;
                         } else {
-                            // Create a new room
                             const newRoomId = 'room_' + Math.random().toString(36).substr(2, 5);
                             games[newRoomId] = {
                                 gameState: 'LOBBY',
                                 bossHP: 500,
-                                players: {
-                                    [currentUid]: { ...playerData, hp: 100, score: 0, hasAnsweredThisRound: false }
-                                },
-                                currentQuestion: { text: "Game is about to start...", answer: "" }
+                                players: { [currentUid]: { ...playerData, hp: 100, score: 0, hasAnsweredThisRound: false } },
+                                currentQuestion: { text: "Game is about to start...", answer: "" },
+                                askedQuestions: {}
                             };
                             currentRoomId = newRoomId;
                         }
@@ -381,14 +375,8 @@
                         const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}`);
                         onDisconnect(playerRef).remove();
                         listenToRoomState(currentRoomId);
-
-                        // If this client started the game, fetch and set the first question
-                        if (isGameStarter) {
-                            await setFirstQuestion(currentRoomId);
-                        }
-                    } else {
-                        throw new Error("Failed to get a room ID from transaction.");
-                    }
+                        if (isGameStarter) await setFirstQuestion(currentRoomId);
+                    } else { throw new Error("Failed to get a room ID from transaction."); }
                 } catch (error) {
                     console.error("Could not find or create room:", error);
                     alert("Error finding a game room.");
@@ -401,29 +389,20 @@
                     const allQuestionsRef = ref(db, 'questions');
                     const snapshot = await get(allQuestionsRef);
                     const questions = snapshot.val();
-                    
-                    if (!questions) {
-                        console.error("No questions found in the '/questions' path in Firebase.");
-                        const roomQuestionRef = ref(db, `games/${roomId}/currentQuestion`);
-                        await set(roomQuestionRef, {
-                            text: "Error: No questions found in the question bank!",
-                            answer: "",
-                            startTime: serverTimestamp()
-                        });
-                        return;
-                    }
+                    if (!questions) throw new Error("No questions in bank");
 
                     const questionIds = Object.keys(questions);
                     const randomQuestionId = questionIds[Math.floor(Math.random() * questionIds.length)];
                     const nextQuestion = questions[randomQuestionId];
 
-                    const roomQuestionRef = ref(db, `games/${roomId}/currentQuestion`);
-                    await set(roomQuestionRef, {
-                        text: nextQuestion.text,
-                        answer: nextQuestion.answer,
-                        startTime: serverTimestamp()
+                    const roomRef = ref(db, `games/${roomId}`);
+                    await runTransaction(roomRef, (room) => {
+                        if(room) {
+                            room.currentQuestion = { text: nextQuestion.text, answer: nextQuestion.answer, startTime: serverTimestamp() };
+                            room.askedQuestions = { [randomQuestionId]: true };
+                        }
+                        return room;
                     });
-
                 } catch (error) {
                     console.error("Failed to set the first question:", error);
                 }
@@ -433,9 +412,26 @@
                 const roomStateRef = ref(db, `games/${roomId}`);
                 onValue(roomStateRef, (snapshot) => {
                     const room = snapshot.val();
-                    if (!room) return; // Room was deleted
+                    if (!room) {
+                        alert("The game room no longer exists. Returning to login.");
+                        window.location.reload(); 
+                        return;
+                    }
 
                     const { gameState, bossHP, currentQuestion, players } = room;
+
+                    if (gameState === 'IN_PROGRESS' && Object.keys(players || {}).length < 2) {
+                        if (players && players[currentUid]) {
+                            const roomRef = ref(db, `games/${roomId}`);
+                            runTransaction(roomRef, (currentRoom) => {
+                                if (currentRoom && currentRoom.gameState === 'IN_PROGRESS') {
+                                    currentRoom.gameState = 'FINISHED';
+                                }
+                                return currentRoom;
+                            });
+                        }
+                        return;
+                    }
 
                     switch (gameState) {
                         case 'IN_PROGRESS': showScreen('game'); break;
@@ -450,7 +446,7 @@
                     updateQuestion(currentQuestion);
                     renderPlayers(players, 'game');
                     renderPlayers(players, 'lobby');
-                    checkAllPlayersDefeated(players);
+                    if (gameState === 'IN_PROGRESS') checkAllPlayersDefeated(players);
                 });
             }
 
@@ -480,18 +476,14 @@
                 finalScoresList.innerHTML = '';
                 if (!players) return;
                 const sortedPlayers = Object.values(players).sort((a, b) => b.score - a.score);
-                
                 if(sortedPlayers.length > 0) {
                     const winner = sortedPlayers[0];
                     winnerAnnouncement.textContent = `${winner.name} Wins!`;
                 }
-
-                sortedPlayers.forEach((player) => {
+                sortedPlayers.forEach((player, index) => {
                     const item = document.createElement('div');
                     item.className = 'score-item';
-                    if (player.name === sortedPlayers[0].name) {
-                        item.classList.add('winner');
-                    }
+                    if (index === 0) item.classList.add('winner');
                     item.innerHTML = `<span>${player.name}</span><span>${player.score} pts</span>`;
                     finalScoresList.appendChild(item);
                 });
@@ -502,6 +494,13 @@
                 const hpPercentage = ((hp || 0) / maxHp) * 100;
                 updateHpBar(bossHpBar, hpPercentage);
                 if (hp <= 0 && gameOverOverlay.style.display === 'none') {
+                    const roomRef = ref(db, `games/${currentRoomId}`);
+                    runTransaction(roomRef, (room) => {
+                       if (room && room.gameState === 'IN_PROGRESS') {
+                           room.gameState = 'FINISHED';
+                       }
+                       return room;
+                    });
                     showDefeatMessage(true);
                 }
             }
@@ -573,7 +572,48 @@
                         }
                     }
                     return player;
+                }).then(() => {
+                    checkRoundCompletionAndSetNextQuestion(currentRoomId);
                 });
+            }
+
+            async function checkRoundCompletionAndSetNextQuestion(roomId) {
+                const roomRef = ref(db, `games/${roomId}`);
+                try {
+                    const roomSnapshot = await get(roomRef);
+                    const room = roomSnapshot.val();
+                    if (!room || room.gameState !== 'IN_PROGRESS' || !room.players) return;
+                    const allAnswered = Object.values(room.players).every(p => p.hasAnsweredThisRound);
+                    if (allAnswered) setTimeout(() => setNextQuestion(roomId), 2000);
+                } catch (error) { console.error("Error checking round completion:", error); }
+            }
+
+            async function setNextQuestion(roomId) {
+                try {
+                    const allQuestionsRef = ref(db, 'questions');
+                    const questionsSnapshot = await get(allQuestionsRef);
+                    const allQuestions = questionsSnapshot.val();
+                    if (!allQuestions) throw new Error("Question bank is empty.");
+
+                    const roomRef = ref(db, `games/${roomId}`);
+                    await runTransaction(roomRef, (room) => {
+                        if (!room) return;
+                        const askedIds = room.askedQuestions ? Object.keys(room.askedQuestions) : [];
+                        const unaskedQuestionIds = Object.keys(allQuestions).filter(id => !askedIds.includes(id));
+
+                        if (unaskedQuestionIds.length > 0) {
+                            const randomQuestionId = unaskedQuestionIds[Math.floor(Math.random() * unaskedQuestionIds.length)];
+                            const nextQuestion = allQuestions[randomQuestionId];
+                            room.currentQuestion = { text: nextQuestion.text, answer: nextQuestion.answer, startTime: serverTimestamp() };
+                            if (!room.askedQuestions) room.askedQuestions = {};
+                            room.askedQuestions[randomQuestionId] = true;
+                            for (const uid in room.players) room.players[uid].hasAnsweredThisRound = false;
+                        } else {
+                            room.gameState = 'FINISHED';
+                        }
+                        return room;
+                    });
+                } catch (error) { console.error("Failed to set next question:", error); }
             }
             
             function checkAllPlayersDefeated(players) {
@@ -617,5 +657,4 @@
     </script>
 </body>
 </html>
-
 
