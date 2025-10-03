@@ -420,14 +420,7 @@
                         onDisconnect(playerRef).remove();
                         listenToRoomState(currentRoomId);
                         if (isGameStarter) {
-                            const allQuestionsRef = ref(db, 'questions');
-                            const snapshot = await get(allQuestionsRef);
-                            if(snapshot.exists()) {
-                                allQuestionsBank = snapshot.val();
-                                await setNextQuestion(currentRoomId);
-                            } else {
-                                console.error("Question bank is empty in Firebase!");
-                            }
+                            await setNextQuestion(currentRoomId);
                         }
                     } else { throw new Error("Failed to get a room ID from transaction."); }
                 } catch (error) { console.error("Could not find or create room:", error); alert("Error finding a game room."); showScreen('login'); }
@@ -631,20 +624,25 @@
             
             async function setNextQuestion(roomId) {
                 const roomRef = ref(db, `games/${roomId}`);
+                const questionsRef = ref(db, 'questions');
+                
                 try {
+                    const questionsSnapshot = await get(questionsRef);
+                    if (!questionsSnapshot.exists()) {
+                         console.error("Question bank not found!");
+                         return;
+                    }
+                    const questions = questionsSnapshot.val();
+
                     await runTransaction(roomRef, (room) => {
                         if (!room) return;
-                        if (!allQuestionsBank) {
-                            console.error("Question bank is not loaded!");
-                            return room;
-                        }
-
+                        
                         const askedIds = room.askedQuestions ? Object.keys(room.askedQuestions) : [];
-                        const unaskedQuestionIds = Object.keys(allQuestionsBank).filter(id => !askedIds.includes(id));
+                        const unaskedQuestionIds = Object.keys(questions).filter(id => !askedIds.includes(id));
 
                         if (unaskedQuestionIds.length > 0) {
                             const randomQuestionId = unaskedQuestionIds[Math.floor(Math.random() * unaskedQuestionIds.length)];
-                            const nextQ = allQuestionsBank[randomQuestionId];
+                            const nextQ = questions[randomQuestionId];
                             const distractors = (Array.isArray(nextQ.options) && nextQ.options.length >= 2) ? nextQ.options : ["Wrong A", "Wrong B"];
 
                             Object.keys(room.players).forEach(uid => {
