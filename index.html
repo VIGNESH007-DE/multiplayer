@@ -420,7 +420,7 @@
                         onDisconnect(playerRef).remove();
                         listenToRoomState(currentRoomId);
                         if (isGameStarter) {
-                            await setNextQuestion(currentRoomId, true); // Pass true for isFirstQuestion
+                            await setNextQuestion(currentRoomId); 
                         }
                     } else { throw new Error("Failed to get a room ID from transaction."); }
                 } catch (error) { console.error("Could not find or create room:", error); alert("Error finding a game room."); showScreen('login'); }
@@ -622,22 +622,21 @@
                 });
             }
             
-            async function setNextQuestion(roomId, isFirstQuestion = false) {
-                if (isFirstQuestion && !allQuestionsBank) {
+            async function setNextQuestion(roomId) {
+                const roomRef = ref(db, `games/${roomId}`);
+                if (!allQuestionsBank) {
                     const questionsSnapshot = await get(ref(db, 'questions'));
                     if (questionsSnapshot.exists()) {
                         allQuestionsBank = questionsSnapshot.val();
                     } else {
-                        alert("CRITICAL ERROR: Question bank not found in Firebase. The game cannot start.");
+                        alert("CRITICAL ERROR: Question bank not found. The game cannot start.");
                         return;
                     }
                 }
-
-                const roomRef = ref(db, `games/${roomId}`);
+                
                 try {
                     await runTransaction(roomRef, (room) => {
-                        if (!room) return;
-                        if (!allQuestionsBank) return room;
+                        if (!room || !allQuestionsBank) return room;
                         
                         const askedIds = room.askedQuestions ? Object.keys(room.askedQuestions) : [];
                         const unaskedQuestionIds = Object.keys(allQuestionsBank).filter(id => !askedIds.includes(id));
