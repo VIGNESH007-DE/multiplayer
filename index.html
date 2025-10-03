@@ -44,12 +44,12 @@
         }
 
         /* Screens */
-        #login-screen, #lobby-screen, #game-screen, #final-scores-screen {
+        #login-screen, #finding-game-screen, #lobby-screen, #game-screen, #final-scores-screen {
             display: none; /* Hide all screens initially */
             text-align: center;
         }
         
-        #login-screen.active, #lobby-screen.active, #game-screen.active, #final-scores-screen.active {
+        #login-screen.active, #finding-game-screen.active, #lobby-screen.active, #game-screen.active, #final-scores-screen.active {
             display: block;
         }
 
@@ -174,9 +174,14 @@
         .hp-bar { height: 100%; width: 100%; border-radius: 8px; background-color: var(--hp-green); transition: width 0.5s ease-in-out, background-color 0.5s ease-in-out; }
 
         /* Final Scores Screen */
+        #winner-announcement {
+            font-size: 24px;
+            color: var(--hp-yellow);
+            margin-bottom: 20px;
+        }
         #final-scores-list { text-align: left; max-width: 400px; margin: 20px auto; }
         .score-item { display: flex; justify-content: space-between; padding: 10px; background-color: var(--secondary-color); border-radius: var(--border-radius); margin-bottom: 10px; font-size: 16px; }
-        .score-item:first-child { background-color: var(--hp-yellow); color: #000; } /* Winner */
+        .score-item.winner { background-color: var(--hp-yellow); color: #000; } /* Winner */
 
         /* Overlays */
         #game-over-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.8); display: none; justify-content: center; align-items: center; z-index: 100; }
@@ -206,10 +211,15 @@
             </div>
         </div>
 
+        <!-- Finding Game Screen -->
+        <div id="finding-game-screen">
+            <h2>Finding a Game Room...</h2>
+        </div>
+
         <!-- Lobby Screen -->
         <div id="lobby-screen">
             <h2>Game Lobby</h2>
-            <p>Waiting for the Quiz Master to start the game...</p>
+            <p>Waiting for another player...</p>
             <h3>Players Joined:</h3>
             <div id="lobby-players-list"></div>
         </div>
@@ -238,7 +248,8 @@
         <!-- Final Scores Screen -->
         <div id="final-scores-screen">
             <h2>Game Over!</h2>
-            <h3>Final Scores:</h3>
+            <h3 id="winner-announcement"></h3>
+            <h4>Final Scores:</h4>
             <div id="final-scores-list"></div>
         </div>
 
@@ -263,12 +274,13 @@
         };
         
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue, onDisconnect, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getDatabase, ref, set, onValue, onDisconnect, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         
         // --- DOM Elements & State ---
         const screens = {
             login: document.getElementById('login-screen'),
+            finding: document.getElementById('finding-game-screen'),
             lobby: document.getElementById('lobby-screen'),
             game: document.getElementById('game-screen'),
             scores: document.getElementById('final-scores-screen'),
@@ -283,112 +295,141 @@
         const bossSprite = document.getElementById('boss-sprite');
         const questionText = document.getElementById('question-text');
         const playersSection = document.getElementById('players-section');
+        const winnerAnnouncement = document.getElementById('winner-announcement');
         const finalScoresList = document.getElementById('final-scores-list');
         const gameOverOverlay = document.getElementById('game-over-overlay');
         const gameOverText = document.getElementById('game-over-text');
         const timerBar = document.getElementById('timer-bar');
 
         let currentUid = null;
+        let currentRoomId = null;
         let currentQuestionAnswer = '';
         let questionTimerInterval = null;
-        const QUESTION_TIME = 15000; // 15 seconds in milliseconds
+        const QUESTION_TIME = 15000; // 15 seconds
 
         try {
             const app = initializeApp(firebaseConfig);
             const db = getDatabase(app);
             const auth = getAuth(app);
             
-            // --- Screen Management ---
             function showScreen(screenName) {
                 Object.values(screens).forEach(s => s.classList.remove('active'));
-                if (screens[screenName]) {
-                    screens[screenName].classList.add('active');
-                }
+                screens[screenName]?.classList.add('active');
             }
             
-            // --- LOGIN ---
             joinGameBtn.addEventListener('click', async () => {
                 const name = studentNameInput.value.trim();
                 const schoolCode = schoolCodeInput.value.trim();
-                if (!name || !schoolCode) return alert("Please enter both name and school code.");
+                if (!name || !schoolCode) return alert("Please enter name and school code.");
 
                 try {
                     const userCredential = await signInAnonymously(auth);
                     currentUid = userCredential.user.uid;
-                    const playerRef = ref(db, 'players/' + currentUid);
-                    
-                    await set(playerRef, { name, schoolCode, hp: 100, score: 0, hasAnsweredThisRound: false });
-                    onDisconnect(playerRef).remove();
-                    
-                    listenToGameState();
+                    await findOrCreateRoom({ name, schoolCode });
                 } catch (error) {
-                    console.error("Error joining game:", error);
-                    alert("Could not join the game.");
+                    console.error("Auth/Login Error:", error);
+                    alert("Could not log you in.");
                 }
             });
 
-            // --- GAME STATE LISTENER ---
-            function listenToGameState() {
-                const gameStateRef = ref(db, 'gameState');
-                const bossHpRef = ref(db, 'bossHP');
-                const currentQuestionRef = ref(db, 'currentQuestion');
-                const playersRef = ref(db, 'players');
-
-                onValue(gameStateRef, (snapshot) => {
-                    const state = snapshot.val();
-                    switch (state) {
-                        case 'IN_PROGRESS':
-                            showScreen('game');
-                            break;
-                        case 'FINISHED':
-                            onValue(playersRef, (playerSnap) => { // Get final scores
-                                renderFinalScores(playerSnap.val());
-                                showScreen('scores');
-                            }, { onlyOnce: true });
-                            break;
-                        case 'LOBBY':
-                        default:
-                            showScreen('lobby');
-                            break;
-                    }
-                });
+            async function findOrCreateRoom(playerData) {
+                showScreen('finding');
+                const gamesRef = ref(db, 'games');
                 
-                // These listeners are for things that happen *during* the game
-                onValue(bossHpRef, (snapshot) => updateBossHp(snapshot.val()));
-                onValue(currentQuestionRef, (snapshot) => updateQuestion(snapshot.val()));
-                onValue(playersRef, (snapshot) => {
-                    renderPlayers(snapshot.val(), 'game'); // for game screen
-                    renderPlayers(snapshot.val(), 'lobby'); // for lobby screen
-                    checkAllPlayersDefeated(snapshot.val());
+                try {
+                    await runTransaction(gamesRef, (games) => {
+                        if (!games) games = {};
+                        
+                        let joinedRoomId = null;
+                        
+                        // Find a room to join
+                        for (const [roomId, roomData] of Object.entries(games)) {
+                            const players = roomData.players || {};
+                            if (roomData.gameState === 'LOBBY' && Object.keys(players).length < 2) {
+                                joinedRoomId = roomId;
+                                break;
+                            }
+                        }
+
+                        if (joinedRoomId) {
+                            // Join the found room
+                            games[joinedRoomId].players[currentUid] = { ...playerData, hp: 100, score: 0, hasAnsweredThisRound: false };
+                            // If we are the second player, start the game
+                            if (Object.keys(games[joinedRoomId].players).length === 2) {
+                                games[joinedRoomId].gameState = 'IN_PROGRESS';
+                            }
+                            currentRoomId = joinedRoomId;
+                        } else {
+                            // Create a new room
+                            const newRoomId = 'room_' + Math.random().toString(36).substr(2, 5);
+                            games[newRoomId] = {
+                                gameState: 'LOBBY',
+                                bossHP: 500,
+                                players: {
+                                    [currentUid]: { ...playerData, hp: 100, score: 0, hasAnsweredThisRound: false }
+                                },
+                                currentQuestion: { text: "Game is about to start...", answer: "" }
+                            };
+                            currentRoomId = newRoomId;
+                        }
+                        return games;
+                    });
+
+                    if (currentRoomId) {
+                        const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}`);
+                        onDisconnect(playerRef).remove();
+                        listenToRoomState(currentRoomId);
+                    } else {
+                        throw new Error("Failed to get a room ID from transaction.");
+                    }
+                } catch (error) {
+                    console.error("Could not find or create room:", error);
+                    alert("Error finding a game room.");
+                    showScreen('login');
+                }
+            }
+            
+            function listenToRoomState(roomId) {
+                const roomStateRef = ref(db, `games/${roomId}`);
+                onValue(roomStateRef, (snapshot) => {
+                    const room = snapshot.val();
+                    if (!room) return; // Room was deleted
+
+                    const { gameState, bossHP, currentQuestion, players } = room;
+
+                    switch (gameState) {
+                        case 'IN_PROGRESS': showScreen('game'); break;
+                        case 'FINISHED':
+                            renderFinalScores(players);
+                            showScreen('scores');
+                            break;
+                        default: showScreen('lobby'); break;
+                    }
+                    
+                    updateBossHp(bossHP);
+                    updateQuestion(currentQuestion);
+                    renderPlayers(players, 'game');
+                    renderPlayers(players, 'lobby');
+                    checkAllPlayersDefeated(players);
                 });
             }
 
-            // --- RENDER FUNCTIONS ---
             function renderPlayers(players, context) {
                 const container = context === 'game' ? playersSection : lobbyPlayersList;
                 container.innerHTML = '';
                 if (!players) return;
-
                 Object.entries(players).forEach(([uid, data]) => {
                     if (context === 'lobby') {
                         const tag = document.createElement('div');
                         tag.className = 'lobby-player-tag';
                         tag.textContent = data.name;
                         container.appendChild(tag);
-                    } else { // 'game' context
+                    } else {
                         const card = document.createElement('div');
                         card.className = 'player-card';
                         if (uid === currentUid) card.classList.add('current-player');
                         if (data.hasAnsweredThisRound) card.classList.add('has-answered');
-                        
-                        card.innerHTML = `
-                            <div class="player-info">
-                                <span class="player-name">${data.name} (${data.schoolCode})</span>
-                                <span class="player-score">Score: ${data.score}</span>
-                            </div>
-                            <div class="hp-bar-container">
-                                <div class="hp-bar" style="width: ${data.hp}%"></div>
-                            </div>`;
+                        card.innerHTML = `<div class="player-info"><span class="player-name">${data.name} (${data.schoolCode})</span><span class="player-score">Score: ${data.score}</span></div><div class="hp-bar-container"><div class="hp-bar" style="width: ${data.hp}%"></div></div>`;
                         container.appendChild(card);
                         updateHpBar(card.querySelector('.hp-bar'), data.hp);
                     }
@@ -399,31 +440,38 @@
                 finalScoresList.innerHTML = '';
                 if (!players) return;
                 const sortedPlayers = Object.values(players).sort((a, b) => b.score - a.score);
-                sortedPlayers.forEach((player, index) => {
+                
+                if(sortedPlayers.length > 0) {
+                    const winner = sortedPlayers[0];
+                    winnerAnnouncement.textContent = `${winner.name} Wins!`;
+                }
+
+                sortedPlayers.forEach((player) => {
                     const item = document.createElement('div');
                     item.className = 'score-item';
-                    item.innerHTML = `<span>${index + 1}. ${player.name}</span><span>${player.score} pts</span>`;
+                    if (player.name === sortedPlayers[0].name) {
+                        item.classList.add('winner');
+                    }
+                    item.innerHTML = `<span>${player.name}</span><span>${player.score} pts</span>`;
                     finalScoresList.appendChild(item);
                 });
             }
 
-            // --- UI & DATA UPDATERS ---
             function updateBossHp(hp) {
                 const maxHp = 500;
                 const hpPercentage = ((hp || 0) / maxHp) * 100;
                 updateHpBar(bossHpBar, hpPercentage);
                 if (hp <= 0 && gameOverOverlay.style.display === 'none') {
-                    showDefeatMessage(true); // Players win
+                    showDefeatMessage(true);
                 }
             }
 
             function updateQuestion(question) {
-                clearInterval(questionTimerInterval); // Stop previous timer
-                if (question && question.text) {
+                clearInterval(questionTimerInterval);
+                if (question?.text) {
                     questionText.textContent = question.text;
                     currentQuestionAnswer = question.answer;
                     answerInput.disabled = false;
-                    
                     const startTime = question.startTime;
                     questionTimerInterval = setInterval(() => {
                         const elapsed = Date.now() - startTime;
@@ -449,45 +497,37 @@
                 else element.style.backgroundColor = 'var(--hp-green)';
             }
             
-            // --- GAME LOGIC ---
             answerForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 const submittedAnswer = answerInput.value.trim();
                 if (!submittedAnswer || answerInput.disabled) return;
                 
-                const questionRef = ref(db, 'currentQuestion');
-                onValue(questionRef, (snapshot) => { // Get latest question start time
+                const questionRef = ref(db, `games/${currentRoomId}/currentQuestion`);
+                onValue(questionRef, (snapshot) => {
                     const questionData = snapshot.val();
-                    if (!questionData || !questionData.startTime) return;
-                    
+                    if (!questionData?.startTime) return;
                     const timeElapsed = Date.now() - questionData.startTime;
-                    const isCorrect = submittedAnswer.toLowerCase() === currentQuestionAnswer.toLowerCase();
+                    const isCorrect = submittedAnswer.toLowerCase() === (questionData.answer || '').toLowerCase();
                     handleAnswer(isCorrect, timeElapsed);
                 }, { onlyOnce: true });
-
                 answerInput.value = '';
-                answerInput.disabled = true; // Prevent re-submission
+                answerInput.disabled = true;
             });
 
             function handleAnswer(isCorrect, timeElapsed) {
-                const playerRef = ref(db, `players/${currentUid}`);
+                const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}`);
                 runTransaction(playerRef, (player) => {
                     if (player && !player.hasAnsweredThisRound) {
                         player.hasAnsweredThisRound = true;
                         if (isCorrect) {
-                            // Points based on time. Faster is better.
                             const pointsGained = Math.max(1, Math.round(10 * ((QUESTION_TIME - timeElapsed) / QUESTION_TIME)));
                             player.score += pointsGained;
-                            // Also damage boss in separate transaction
-                            runTransaction(ref(db, 'bossHP'), (hp) => (hp || 0) - 10);
-                            
-                            // Client-side animations
+                            runTransaction(ref(db, `games/${currentRoomId}/bossHP`), (hp) => (hp || 0) - 10);
                             playAttackAnimation();
                             bossSprite.classList.add('shake');
                             setTimeout(() => bossSprite.classList.remove('shake'), 500);
                         } else {
                             player.hp = Math.max(0, player.hp - 10);
-                            
                             document.body.classList.add('player-hit');
                             setTimeout(() => document.body.classList.remove('player-hit'), 300);
                         }
@@ -513,23 +553,18 @@
                 const fireball = document.createElement('div');
                 fireball.className = 'attack-animation fireball';
                 fireball.textContent = '🔥';
-
                 const playerCard = document.querySelector('.player-card.current-player');
                 const startRect = playerCard ? playerCard.getBoundingClientRect() : {top: window.innerHeight - 50, left: window.innerWidth / 2};
                 const endRect = bossSprite.getBoundingClientRect();
-                
                 const startX = startRect.left + startRect.width / 2;
                 const startY = startRect.top + startRect.height / 2;
                 const endX = endRect.left + endRect.width / 2;
                 const endY = endRect.top + endRect.height / 2;
-                
                 fireball.style.position = 'fixed';
                 fireball.style.left = `${startX}px`;
                 fireball.style.top = `${startY}px`;
-
                 document.documentElement.style.setProperty('--target-x', `${endX - startX}px`);
                 document.documentElement.style.setProperty('--target-y', `${endY - startY}px`);
-
                 document.getElementById('animation-container').appendChild(fireball);
                 setTimeout(() => fireball.remove(), 700);
             }
