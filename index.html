@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boss Battle - Multiplayer Quiz</title>
+    <title>Card Quiz - Multiplayer</title>
     <style>
         /* Basic Setup and Theming */
-        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Roboto+Mono:wght@400;700&display=swap');
 
         :root {
             --background-color: #1a1a2e;
@@ -14,29 +14,33 @@
             --secondary-color: #0f3460;
             --accent-color: #e94560;
             --font-color: #dcdcdc;
-            --hp-green: #4caf50;
-            --hp-yellow: #ffc107;
-            --hp-red: #f44336;
-            --border-radius: 8px;
+            --money-color: #ffc107;
+            --correct-color: #4caf50;
+            --incorrect-color: #f44336;
+            --border-radius: 12px;
             --timer-color: #00bcd4;
         }
 
         body {
-            font-family: 'Press Start 2P', cursive;
+            font-family: 'Roboto Mono', monospace;
             background-color: var(--background-color);
             color: var(--font-color);
             margin: 0;
-            padding: 20px;
+            padding: 10px;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
             overflow: hidden;
+            perspective: 1000px;
         }
 
         .container {
             width: 100%;
-            max-width: 1200px;
+            max-width: 1000px;
+            height: 95vh;
+            display: flex;
+            flex-direction: column;
             padding: 20px;
             background-color: var(--primary-color);
             border-radius: var(--border-radius);
@@ -44,21 +48,26 @@
         }
 
         /* Screens */
-        #login-screen, #finding-game-screen, #lobby-screen, #game-screen, #final-scores-screen {
-            display: none; /* Hide all screens initially */
+        #login-screen, #finding-game-screen, #game-screen, #final-scores-screen {
+            display: none;
             text-align: center;
+            width: 100%;
         }
         
-        #login-screen.active, #finding-game-screen.active, #lobby-screen.active, #game-screen.active, #final-scores-screen.active {
-            display: block;
+        #login-screen.active, #finding-game-screen.active, #game-screen.active, #final-scores-screen.active {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+        }
+        
+        h1, h2, h3 {
+             font-family: 'Press Start 2P', cursive;
         }
 
         /* Login Screen */
-        #login-screen h1 {
-            color: var(--accent-color);
-            text-shadow: 2px 2px #000;
-        }
-
+        #login-screen h1 { color: var(--accent-color); text-shadow: 2px 2px #000; }
         .login-form input, .login-form button {
             font-family: 'Press Start 2P', cursive;
             display: block;
@@ -68,134 +77,153 @@
             padding: 15px;
             border-radius: var(--border-radius);
         }
+        .login-form input { border: 2px solid var(--secondary-color); background-color: var(--background-color); color: var(--font-color); font-size: 14px; }
+        .login-form button { border: none; background-color: var(--accent-color); color: white; cursor: pointer; font-size: 16px; transition: transform 0.2s; }
+        .login-form button:hover { transform: scale(1.05); }
 
-        .login-form input {
-            border: 2px solid var(--secondary-color);
-            background-color: var(--background-color);
-            color: var(--font-color);
-            font-size: 14px;
+        /* Game Screen Layout */
+        #game-screen {
+            justify-content: space-between;
         }
-
-        .login-form button {
-            border: none;
-            background-color: var(--accent-color);
-            color: white;
-            cursor: pointer;
-            font-size: 16px;
-            transition: transform 0.2s, background-color 0.2s;
-        }
-        .login-form button:hover {
-            transform: scale(1.05);
-            background-color: #ff5a79;
-        }
-        
-        /* Lobby Screen */
-        #lobby-players-list {
+        #opponent-info, #player-info {
+            width: 100%;
             display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 20px;
-            min-height: 50px;
-        }
-        .lobby-player-tag {
-            background-color: var(--secondary-color);
-            padding: 10px 15px;
-            border-radius: 20px;
-            font-size: 14px;
-        }
-
-        /* Game Screen */
-        #boss-section {
-            margin-bottom: 30px;
-            position: relative;
-        }
-        #boss-name { font-size: 24px; color: var(--accent-color); }
-        #boss-sprite {
-            font-size: 100px;
-            margin: 10px 0;
-            transition: transform 0.1s;
-        }
-        #boss-sprite.shake { animation: shake 0.5s; }
-
-        /* Timer Bar */
-        #timer-container {
-            width: 100%;
-            height: 10px;
-            background-color: var(--secondary-color);
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background: var(--secondary-color);
             border-radius: var(--border-radius);
-            margin: 15px 0;
-            overflow: hidden;
         }
-        #timer-bar {
-            height: 100%;
+        .player-hud-name { font-size: 16px; font-weight: bold; }
+        .player-hud-money { font-size: 20px; color: var(--money-color); font-weight: bold; }
+        
+        /* Play Area */
+        #play-area {
             width: 100%;
-            background-color: var(--timer-color);
-            transition: width 0.2s linear;
-        }
-
-        /* QA Section */
-        #qa-section {
-            background-color: var(--secondary-color);
-            padding: 20px;
-            border-radius: var(--border-radius);
-            margin-bottom: 30px;
-        }
-        #question-text { font-size: 18px; line-height: 1.6; min-height: 50px; }
-        #answer-form { display: flex; justify-content: center; gap: 10px; margin-top: 20px; }
-        #answer-input {
-            padding: 10px;
             flex-grow: 1;
-            max-width: 400px;
-        }
-        #answer-form button { padding: 10px 20px; }
-
-        /* Players Section */
-        #players-section {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             gap: 20px;
         }
-        .player-card {
-            background-color: var(--secondary-color);
-            padding: 15px;
-            border-radius: var(--border-radius);
-            border-left: 5px solid var(--accent-color);
-            text-align: left;
-        }
-        .player-card.current-player { border-left-color: var(--hp-yellow); }
-        .player-card.has-answered { opacity: 0.6; border-left-color: #666; }
-        .player-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .player-name { font-size: 14px; }
-        .player-score { font-size: 14px; color: var(--hp-yellow); }
 
-        /* Health Bars */
-        .hp-bar-container { width: 100%; height: 20px; background-color: #333; border-radius: 10px; overflow: hidden; border: 2px solid #000; }
-        .hp-bar { height: 100%; width: 100%; border-radius: 8px; background-color: var(--hp-green); transition: width 0.5s ease-in-out, background-color 0.5s ease-in-out; }
+        #question-display {
+            background: rgba(0,0,0,0.2);
+            padding: 20px;
+            border-radius: var(--border-radius);
+            min-height: 80px;
+            width: 90%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #question-text { font-size: clamp(16px, 2.5vw, 24px); line-height: 1.5; font-weight: bold; }
+
+        #played-cards-area {
+            display: flex;
+            gap: 20px;
+            min-height: 150px; /* Card height */
+            align-items: center;
+        }
+
+        /* Player Hand */
+        #player-hand {
+            display: flex;
+            justify-content: center;
+            gap: -20px; /* Overlap cards */
+            width: 100%;
+            padding-bottom: 20px;
+        }
+
+        /* Card Styling & Animations */
+        .card {
+            width: 120px;
+            height: 150px;
+            background: linear-gradient(145deg, var(--secondary-color), #223e71);
+            border: 2px solid var(--timer-color);
+            border-radius: var(--border-radius);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            transform-style: preserve-3d;
+        }
+        
+        #player-hand .card {
+            transform-origin: bottom center;
+        }
+        
+        #player-hand .card:hover {
+            transform: translateY(-20px) scale(1.05);
+            z-index: 10;
+        }
+
+        .card.played {
+            cursor: default;
+            position: relative;
+        }
+
+        .card .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: var(--border-radius);
+        }
+
+        .card .card-front {
+            /* Content is already there */
+        }
+        
+        .card .card-back {
+            transform: rotateY(180deg);
+            font-size: 24px;
+        }
+
+        .card.is-flipping {
+            animation: flip 0.6s ease;
+        }
+
+        @keyframes flip {
+            from { transform: rotateY(0deg); }
+            to { transform: rotateY(180deg); }
+        }
+
+        .card.correct .card-back { background: var(--correct-color); }
+        .card.incorrect .card-back { background: var(--incorrect-color); }
+        
+        .card.entering {
+            animation: deal-in 0.5s ease-out forwards;
+            opacity: 0;
+        }
+        
+        .card:nth-child(1) { animation-delay: 0.1s; }
+        .card:nth-child(2) { animation-delay: 0.2s; }
+        .card:nth-child(3) { animation-delay: 0.3s; }
+        
+        @keyframes deal-in {
+            from { transform: translateY(100px) rotate(15deg); opacity: 0; }
+            to { transform: translateY(0) rotate(0); opacity: 1; }
+        }
 
         /* Final Scores Screen */
-        #winner-announcement {
-            font-size: 24px;
-            color: var(--hp-yellow);
-            margin-bottom: 20px;
-        }
-        #final-scores-list { text-align: left; max-width: 400px; margin: 20px auto; }
+        #final-scores-screen { gap: 20px; }
+        #winner-announcement { font-size: 24px; color: var(--money-color); }
+        #final-scores-list { text-align: left; max-width: 400px; width: 100%; }
         .score-item { display: flex; justify-content: space-between; padding: 10px; background-color: var(--secondary-color); border-radius: var(--border-radius); margin-bottom: 10px; font-size: 16px; }
-        .score-item.winner { background-color: var(--hp-yellow); color: #000; } /* Winner */
+        .score-item.winner { background-color: var(--money-color); color: #000; }
+        #exit-game-btn { font-family: 'Press Start 2P', cursive; border: none; background-color: var(--accent-color); color: white; cursor: pointer; font-size: 16px; padding: 15px 30px; border-radius: var(--border-radius); transition: transform 0.2s; }
+        #exit-game-btn:hover { transform: scale(1.05); }
 
-        /* Overlays */
-        #game-over-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.8); display: none; justify-content: center; align-items: center; z-index: 100; }
-        #game-over-text { font-size: 48px; text-shadow: 4px 4px #000; }
-        #game-over-text.win { color: var(--hp-green); }
-        #game-over-text.lose { color: var(--accent-color); }
-        
-        /* Animations */
-        @keyframes shake { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); } 20%, 40%, 60%, 80% { transform: translateX(5px); } }
-        @keyframes red-flash { 0%, 100% { background-color: var(--background-color); } 50% { background-color: darkred; } }
-        body.player-hit { animation: red-flash 0.3s linear; }
-        .attack-animation { position: absolute; font-size: 40px; opacity: 0; z-index: 50; pointer-events: none; }
-        .attack-animation.fireball { color: orange; animation: fireball-fly 0.7s ease-out forwards; }
-        @keyframes fireball-fly { 0% { opacity: 1; transform: translate(0, 0) scale(0.5); } 100% { opacity: 0; transform: translate(var(--target-x), var(--target-y)) scale(1.5); } }
     </style>
 </head>
 <body>
@@ -203,7 +231,7 @@
     <div class="container">
         <!-- Login Screen -->
         <div id="login-screen" class="active">
-            <h1>Boss Battle Quiz</h1>
+            <h1>Card Quiz</h1>
             <div class="login-form">
                 <input type="text" id="student-name" placeholder="Enter Your Name">
                 <input type="text" id="school-code" placeholder="Enter School Code">
@@ -216,33 +244,30 @@
             <h2>Finding a Game Room...</h2>
         </div>
 
-        <!-- Lobby Screen -->
-        <div id="lobby-screen">
-            <h2>Game Lobby</h2>
-            <p>Waiting for another player...</p>
-            <h3>Players Joined:</h3>
-            <div id="lobby-players-list"></div>
-        </div>
-
         <!-- Game Screen -->
         <div id="game-screen">
-            <div id="boss-section">
-                <div id="boss-sprite">👹</div>
-                <h2 id="boss-name">Quiz Master</h2>
-                <div class="hp-bar-container">
-                    <div class="hp-bar" id="boss-hp-bar"></div>
+            <div id="opponent-info">
+                <div id="opponent-name" class="player-hud-name">Opponent</div>
+                <div id="opponent-money" class="player-hud-money">$100</div>
+            </div>
+
+            <div id="play-area">
+                <div id="question-display">
+                    <p id="question-text">Waiting for game to start...</p>
+                </div>
+                <div id="played-cards-area">
+                     <!-- Cards played by players will appear here -->
                 </div>
             </div>
-            <div id="qa-section">
-                <div id="timer-container"><div id="timer-bar"></div></div>
-                <p id="question-text">Loading question...</p>
-                <form id="answer-form">
-                    <input type="text" id="answer-input" placeholder="Type your answer here..." autocomplete="off">
-                    <button type="submit">Attack!</button>
-                </form>
+
+            <div id="player-hand">
+                <!-- Player's cards will be generated here -->
             </div>
-            <h3>Players</h3>
-            <div id="players-section"></div>
+
+            <div id="player-info">
+                <div id="player-name" class="player-hud-name">You</div>
+                <div id="player-money" class="player-hud-money">$100</div>
+            </div>
         </div>
         
         <!-- Final Scores Screen -->
@@ -251,15 +276,10 @@
             <h3 id="winner-announcement"></h3>
             <h4>Final Scores:</h4>
             <div id="final-scores-list"></div>
+            <button id="exit-game-btn">Exit to Menu</button>
         </div>
 
-        <!-- Game Over Overlay (for boss/player defeat) -->
-        <div id="game-over-overlay">
-            <h1 id="game-over-text"></h1>
-        </div>
     </div>
-    
-    <div id="animation-container"></div>
 
     <script type="module">
         const firebaseConfig = {
@@ -277,35 +297,24 @@
         import { getDatabase, ref, set, onValue, onDisconnect, runTransaction, serverTimestamp, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         
-        // --- DOM Elements & State ---
         const screens = {
             login: document.getElementById('login-screen'),
             finding: document.getElementById('finding-game-screen'),
-            lobby: document.getElementById('lobby-screen'),
             game: document.getElementById('game-screen'),
             scores: document.getElementById('final-scores-screen'),
         };
-        const joinGameBtn = document.getElementById('join-game-btn');
         const studentNameInput = document.getElementById('student-name');
         const schoolCodeInput = document.getElementById('school-code');
-        const lobbyPlayersList = document.getElementById('lobby-players-list');
-        const answerForm = document.getElementById('answer-form');
-        const answerInput = document.getElementById('answer-input');
-        const bossHpBar = document.getElementById('boss-hp-bar');
-        const bossSprite = document.getElementById('boss-sprite');
+        const joinGameBtn = document.getElementById('join-game-btn');
         const questionText = document.getElementById('question-text');
-        const playersSection = document.getElementById('players-section');
+        const playerHand = document.getElementById('player-hand');
+        const playedCardsArea = document.getElementById('played-cards-area');
         const winnerAnnouncement = document.getElementById('winner-announcement');
         const finalScoresList = document.getElementById('final-scores-list');
-        const gameOverOverlay = document.getElementById('game-over-overlay');
-        const gameOverText = document.getElementById('game-over-text');
-        const timerBar = document.getElementById('timer-bar');
+        const exitGameBtn = document.getElementById('exit-game-btn');
 
         let currentUid = null;
         let currentRoomId = null;
-        let questionTimerInterval = null;
-        let isTimedOut = false;
-        const QUESTION_TIME = 15000; // 15 seconds
 
         try {
             const app = initializeApp(firebaseConfig);
@@ -321,16 +330,14 @@
                 const name = studentNameInput.value.trim();
                 const schoolCode = schoolCodeInput.value.trim();
                 if (!name || !schoolCode) return alert("Please enter name and school code.");
-
                 try {
                     const userCredential = await signInAnonymously(auth);
                     currentUid = userCredential.user.uid;
                     await findOrCreateRoom({ name, schoolCode });
-                } catch (error) {
-                    console.error("Auth/Login Error:", error);
-                    alert("Could not log you in.");
-                }
+                } catch (error) { console.error("Auth/Login Error:", error); alert("Could not log you in."); }
             });
+            
+            exitGameBtn.addEventListener('click', () => window.location.reload());
 
             async function findOrCreateRoom(playerData) {
                 showScreen('finding');
@@ -351,7 +358,7 @@
                         }
 
                         if (joinedRoomId) {
-                            games[joinedRoomId].players[currentUid] = { ...playerData, hp: 100, score: 0, hasAnsweredThisRound: false };
+                            games[joinedRoomId].players[currentUid] = { ...playerData, money: 100, score: 0, playedCard: null };
                             if (Object.keys(games[joinedRoomId].players).length === 2) {
                                 games[joinedRoomId].gameState = 'IN_PROGRESS';
                                 isGameStarter = true;
@@ -361,8 +368,7 @@
                             const newRoomId = 'room_' + Math.random().toString(36).substr(2, 5);
                             games[newRoomId] = {
                                 gameState: 'LOBBY',
-                                bossHP: 500,
-                                players: { [currentUid]: { ...playerData, hp: 100, score: 0, hasAnsweredThisRound: false } },
+                                players: { [currentUid]: { ...playerData, money: 100, score: 0, playedCard: null } },
                                 currentQuestion: { text: "Game is about to start...", answer: "" },
                                 askedQuestions: {}
                             };
@@ -375,17 +381,9 @@
                         const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}`);
                         onDisconnect(playerRef).remove();
                         listenToRoomState(currentRoomId);
-                        if (isGameStarter) await setFirstQuestion(currentRoomId);
+                        if (isGameStarter) await setNextQuestion(currentRoomId, true);
                     } else { throw new Error("Failed to get a room ID from transaction."); }
-                } catch (error) {
-                    console.error("Could not find or create room:", error);
-                    alert("Error finding a game room.");
-                    showScreen('login');
-                }
-            }
-            
-            async function setFirstQuestion(roomId) {
-                await setNextQuestion(roomId, true);
+                } catch (error) { console.error("Could not find or create room:", error); alert("Error finding a game room."); showScreen('login'); }
             }
             
             function listenToRoomState(roomId) {
@@ -393,25 +391,20 @@
                 onValue(roomStateRef, (snapshot) => {
                     const room = snapshot.val();
                     if (!room) {
-                        alert("The game room no longer exists. Returning to login.");
+                        alert("The game ended because the other player left.");
                         window.location.reload(); 
                         return;
                     }
 
-                    const { gameState, bossHP, currentQuestion, players } = room;
+                    const { gameState, currentQuestion, players } = room;
 
-                    // Disconnect Logic
                     if (gameState === 'IN_PROGRESS' && Object.keys(players || {}).length < 2) {
-                        if (players && players[currentUid]) {
-                            const roomRef = ref(db, `games/${roomId}`);
-                            runTransaction(roomRef, (currentRoom) => {
-                                if (currentRoom && currentRoom.gameState === 'IN_PROGRESS') {
-                                    currentRoom.gameState = 'FINISHED';
-                                }
-                                return currentRoom;
-                            });
-                        }
-                        return;
+                         if (players && players[currentUid]) {
+                            alert("The other player disconnected. The game is over.");
+                            renderFinalScores(players);
+                            showScreen('scores');
+                         }
+                         return;
                     }
 
                     switch (gameState) {
@@ -419,172 +412,145 @@
                         case 'FINISHED':
                             renderFinalScores(players);
                             showScreen('scores');
-                            break;
-                        default: showScreen('lobby'); break;
+                            return;
+                        default: // LOBBY or other states
+                           questionText.textContent = "Waiting for another player...";
+                           showScreen('game'); // Show game screen as lobby
+                           break;
                     }
                     
-                    updateBossHp(bossHP);
-                    updateQuestion(currentQuestion);
-                    renderPlayers(players, 'game');
-                    renderPlayers(players, 'lobby');
-                    if (gameState === 'IN_PROGRESS') checkAllPlayersDefeated(players);
-                });
-            }
-
-            function renderPlayers(players, context) {
-                const container = context === 'game' ? playersSection : lobbyPlayersList;
-                container.innerHTML = '';
-                if (!players) return;
-                Object.entries(players).forEach(([uid, data]) => {
-                    if (context === 'lobby') {
-                        const tag = document.createElement('div');
-                        tag.className = 'lobby-player-tag';
-                        tag.textContent = data.name;
-                        container.appendChild(tag);
-                    } else {
-                        const card = document.createElement('div');
-                        card.className = 'player-card';
-                        if (uid === currentUid) card.classList.add('current-player');
-                        if (data.hasAnsweredThisRound) card.classList.add('has-answered');
-                        card.innerHTML = `<div class="player-info"><span class="player-name">${data.name} (${data.schoolCode})</span><span class="player-score">Score: ${data.score}</span></div><div class="hp-bar-container"><div class="hp-bar" style="width: ${data.hp}%"></div></div>`;
-                        container.appendChild(card);
-                        updateHpBar(card.querySelector('.hp-bar'), data.hp);
+                    questionText.textContent = currentQuestion.text;
+                    renderPlayers(players);
+                    
+                    // Check if both players have played their card
+                    if (players && Object.values(players).every(p => p.playedCard !== null)) {
+                        setTimeout(() => revealCards(room), 1000);
                     }
                 });
             }
+            
+            function renderPlayers(players) {
+                if (!players || !currentUid) return;
+                const playerIds = Object.keys(players);
+                const opponentId = playerIds.find(id => id !== currentUid);
+                
+                const myData = players[currentUid];
+                document.getElementById('player-name').textContent = myData.name;
+                document.getElementById('player-money').textContent = `$${myData.money}`;
+                renderHand(myData.hand, myData.playedCard);
 
-            function renderFinalScores(players) {
-                finalScoresList.innerHTML = '';
-                if (!players) return;
-                const sortedPlayers = Object.entries(players).sort((a, b) => b[1].score - a[1].score);
-                if(sortedPlayers.length > 0) {
-                    const winnerName = sortedPlayers[0][1].name;
-                    winnerAnnouncement.textContent = `${winnerName} Wins!`;
-                }
-                sortedPlayers.forEach(([uid, player], index) => {
-                    const item = document.createElement('div');
-                    item.className = 'score-item';
-                    if (index === 0) item.classList.add('winner');
-                    item.innerHTML = `<span>${player.name}</span><span>${player.score} pts</span>`;
-                    finalScoresList.appendChild(item);
-                });
-            }
-
-            function updateBossHp(hp) {
-                const maxHp = 500;
-                const hpPercentage = ((hp || 0) / maxHp) * 100;
-                updateHpBar(bossHpBar, hpPercentage);
-                if (hp <= 0 && gameOverOverlay.style.display === 'none') {
-                    const roomRef = ref(db, `games/${currentRoomId}`);
-                    runTransaction(roomRef, (room) => {
-                       if (room && room.gameState === 'IN_PROGRESS') {
-                           room.gameState = 'FINISHED';
-                       }
-                       return room;
-                    });
-                    showDefeatMessage(true);
-                }
-            }
-
-            function updateQuestion(question) {
-                clearInterval(questionTimerInterval);
-                isTimedOut = false;
-                if (question?.text && question.text !== "Game is about to start...") {
-                    questionText.textContent = question.text;
-                    answerInput.disabled = false;
-                    const startTime = question.startTime;
-                    questionTimerInterval = setInterval(() => {
-                        const elapsed = Date.now() - startTime;
-                        const remaining = QUESTION_TIME - elapsed;
-                        const percentage = (remaining / QUESTION_TIME) * 100;
-                        timerBar.style.width = `${Math.max(0, percentage)}%`;
-                        if (remaining <= 0 && !isTimedOut) {
-                            isTimedOut = true;
-                            clearInterval(questionTimerInterval);
-                            answerInput.disabled = true;
-                            handleTimeout();
-                        }
-                    }, 100);
+                if (opponentId) {
+                    const opponentData = players[opponentId];
+                    document.getElementById('opponent-name').textContent = opponentData.name;
+                    document.getElementById('opponent-money').textContent = `$${opponentData.money}`;
+                    renderPlayedCard('opponent', opponentData.playedCard);
                 } else {
-                    questionText.textContent = "Waiting for the next question...";
-                    answerInput.disabled = true;
-                    timerBar.style.width = '100%';
+                    document.getElementById('opponent-name').textContent = 'Waiting...';
+                    document.getElementById('opponent-money').textContent = '';
+                }
+            }
+
+            function renderHand(hand, playedCard) {
+                playerHand.innerHTML = '';
+                if (!hand) return;
+
+                hand.forEach((answer, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'card entering';
+                    card.textContent = answer;
+                    if (playedCard) {
+                        card.style.pointerEvents = 'none';
+                        if (playedCard !== answer) card.style.opacity = '0.5';
+                    } else {
+                        card.onclick = () => playCard(answer);
+                    }
+                    playerHand.appendChild(card);
+                });
+
+                if (playedCard) {
+                    renderPlayedCard('player', playedCard);
+                } else {
+                    renderPlayedCard('player', null); // Clear played card
                 }
             }
             
-            function handleTimeout() {
-                const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}`);
-                runTransaction(playerRef, (player) => {
-                    if (player && !player.hasAnsweredThisRound) {
-                        player.hasAnsweredThisRound = true;
-                    }
-                    return player;
-                }).then(() => {
-                    checkRoundCompletionAndSetNextQuestion(currentRoomId);
-                });
-            }
-
-            function updateHpBar(element, percentage) {
-                element.style.width = `${Math.max(0, percentage)}%`;
-                if (percentage <= 25) element.style.backgroundColor = 'var(--hp-red)';
-                else if (percentage <= 50) element.style.backgroundColor = 'var(--hp-yellow)';
-                else element.style.backgroundColor = 'var(--hp-green)';
-            }
-            
-            answerForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const submittedAnswer = answerInput.value.trim();
-                if (!submittedAnswer || answerInput.disabled) return;
+            function renderPlayedCard(who, cardText) {
+                let cardSlotId = who === 'player' ? 'player-played-card' : 'opponent-played-card';
+                let existingCard = document.getElementById(cardSlotId);
                 
-                clearInterval(questionTimerInterval); // Stop timer on submit
+                if (!cardText) {
+                    if (existingCard) existingCard.remove();
+                    return;
+                }
                 
-                const questionRef = ref(db, `games/${currentRoomId}/currentQuestion`);
-                onValue(questionRef, (snapshot) => {
-                    const questionData = snapshot.val();
-                    if (!questionData?.startTime) return;
-                    const timeElapsed = Date.now() - questionData.startTime;
-                    const isCorrect = submittedAnswer.toLowerCase() === (questionData.answer || '').toLowerCase();
-                    handleAnswer(isCorrect, timeElapsed);
-                }, { onlyOnce: true });
-                answerInput.value = '';
-                answerInput.disabled = true;
-            });
-
-            function handleAnswer(isCorrect, timeElapsed) {
-                const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}`);
-                runTransaction(playerRef, (player) => {
-                    if (player && !player.hasAnsweredThisRound) {
-                        player.hasAnsweredThisRound = true;
-                        if (isCorrect) {
-                            const pointsGained = Math.max(1, Math.round(10 * ((QUESTION_TIME - timeElapsed) / QUESTION_TIME)));
-                            player.score += pointsGained;
-                            runTransaction(ref(db, `games/${currentRoomId}/bossHP`), (hp) => (hp || 0) - 10);
-                            playAttackAnimation();
-                            bossSprite.classList.add('shake');
-                            setTimeout(() => bossSprite.classList.remove('shake'), 500);
-                        } else {
-                            player.hp = Math.max(0, player.hp - 10);
-                            document.body.classList.add('player-hit');
-                            setTimeout(() => document.body.classList.remove('player-hit'), 300);
-                        }
+                if (!existingCard) {
+                    existingCard = document.createElement('div');
+                    existingCard.id = cardSlotId;
+                    existingCard.className = 'card played';
+                    if (who === 'player') {
+                        playedCardsArea.appendChild(existingCard);
+                    } else {
+                        playedCardsArea.prepend(existingCard);
                     }
-                    return player;
-                }).then(() => {
-                    checkRoundCompletionAndSetNextQuestion(currentRoomId);
-                });
+                }
+                existingCard.innerHTML = `<div class="card-face card-front">${cardText}</div><div class="card-face card-back"></div>`;
             }
 
-            async function checkRoundCompletionAndSetNextQuestion(roomId) {
-                const roomRef = ref(db, `games/${roomId}`);
-                try {
-                    const roomSnapshot = await get(roomRef);
-                    const room = roomSnapshot.val();
-                    if (!room || room.gameState !== 'IN_PROGRESS' || !room.players) return;
-                    const allAnswered = Object.values(room.players).every(p => p.hasAnsweredThisRound);
-                    if (allAnswered) {
-                        setTimeout(() => setNextQuestion(roomId), 2000); // Wait 2s before next question
+            function playCard(answer) {
+                playerHand.querySelectorAll('.card').forEach(c => c.style.pointerEvents = 'none');
+                const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}/playedCard`);
+                set(playerRef, answer);
+            }
+
+            function revealCards(room) {
+                const { players, currentQuestion } = room;
+                const correctAnswer = currentQuestion.answer;
+
+                Object.keys(players).forEach(uid => {
+                    const who = uid === currentUid ? 'player' : 'opponent';
+                    const cardSlotId = `${who}-played-card`;
+                    const cardEl = document.getElementById(cardSlotId);
+                    if (cardEl) {
+                        const playerAnswer = players[uid].playedCard;
+                        const isCorrect = playerAnswer.toLowerCase() === correctAnswer.toLowerCase();
+                        cardEl.classList.add('is-flipping');
+                        cardEl.classList.add(isCorrect ? 'correct' : 'incorrect');
+                        const backFace = cardEl.querySelector('.card-back');
+                        backFace.textContent = isCorrect ? '✔️' : '❌';
                     }
-                } catch (error) { console.error("Error checking round completion:", error); }
+                });
+                
+                // After reveal, process results and move to next question
+                setTimeout(() => processRoundResults(room), 2500);
+            }
+
+            function processRoundResults(room) {
+                 const roomRef = ref(db, `games/${currentRoomId}`);
+                 runTransaction(roomRef, (currentRoom) => {
+                     if (!currentRoom) return;
+                     const correctAnswer = currentRoom.currentQuestion.answer;
+                     Object.keys(currentRoom.players).forEach(uid => {
+                         const player = currentRoom.players[uid];
+                         const isCorrect = player.playedCard.toLowerCase() === correctAnswer.toLowerCase();
+                         if (isCorrect) {
+                             player.score += 10;
+                         } else {
+                             player.money -= 20;
+                         }
+                     });
+                     return currentRoom;
+                 }).then(() => {
+                     // Check for game over (money) before setting next question
+                     const playerRef = ref(db, `games/${currentRoomId}/players`);
+                     get(playerRef).then(snapshot => {
+                         const players = snapshot.val();
+                         if (Object.values(players).some(p => p.money <= 0)) {
+                             set(ref(db, `games/${currentRoomId}/gameState`), 'FINISHED');
+                         } else {
+                             setNextQuestion(currentRoomId);
+                         }
+                     });
+                 });
             }
 
             async function setNextQuestion(roomId, isFirstQuestion = false) {
@@ -603,54 +569,64 @@
 
                         if (unaskedQuestionIds.length > 0) {
                             const randomQuestionId = unaskedQuestionIds[Math.floor(Math.random() * unaskedQuestionIds.length)];
-                            const nextQuestion = allQuestions[randomQuestionId];
-                            room.currentQuestion = { text: nextQuestion.text, answer: nextQuestion.answer, startTime: serverTimestamp() };
+                            const nextQ = allQuestions[randomQuestionId];
+                            
+                            // Deal hands
+                            const allOptions = [nextQ.answer, ...nextQ.options];
+                            Object.keys(room.players).forEach(uid => {
+                                const player = room.players[uid];
+                                // Create a hand with the correct answer + 2 random distractors
+                                let handOptions = [...nextQ.options];
+                                // Shuffle options
+                                for (let i = handOptions.length - 1; i > 0; i--) {
+                                    const j = Math.floor(Math.random() * (i + 1));
+                                    [handOptions[i], handOptions[j]] = [handOptions[j], handOptions[i]];
+                                }
+                                player.hand = [nextQ.answer, ...handOptions.slice(0, 2)];
+                                // Shuffle final hand
+                                for (let i = player.hand.length - 1; i > 0; i--) {
+                                    const j = Math.floor(Math.random() * (i + 1));
+                                    [player.hand[i], player.hand[j]] = [player.hand[j], player.hand[i]];
+                                }
+                                player.playedCard = null;
+                            });
+
+                            room.currentQuestion = { text: nextQ.text, answer: nextQ.answer, startTime: serverTimestamp() };
                             if (!room.askedQuestions) room.askedQuestions = {};
                             room.askedQuestions[randomQuestionId] = true;
-                            // Reset answer status for all players for the new round
-                            for (const uid in room.players) {
-                                room.players[uid].hasAnsweredThisRound = false;
-                            }
                         } else {
-                            // No more questions, end the game
-                            room.gameState = 'FINISHED';
+                            room.gameState = 'FINISHED'; // No more questions
                         }
                         return room;
                     });
                 } catch (error) { console.error("Failed to set next question:", error); }
             }
             
-            function checkAllPlayersDefeated(players) {
-                if (!players || Object.keys(players).length === 0) return;
-                if (Object.values(players).every(p => p.hp <= 0)) {
-                    if (gameOverOverlay.style.display === 'none') showDefeatMessage(false);
+             function renderFinalScores(players) {
+                finalScoresList.innerHTML = '';
+                if (!players) {
+                    winnerAnnouncement.textContent = "Game Over";
+                    return;
+                };
+                const sortedPlayers = Object.entries(players).sort((a, b) => b[1].score - a[1].score);
+                if(sortedPlayers.length > 0) {
+                    if (sortedPlayers.length === 1) {
+                         winnerAnnouncement.textContent = "You are the last one standing!";
+                    } else if (sortedPlayers[0][1].score === sortedPlayers[1][1].score) {
+                         winnerAnnouncement.textContent = "It's a Tie!";
+                    }
+                    else {
+                        const winnerName = sortedPlayers[0][1].name;
+                        winnerAnnouncement.textContent = `${winnerName} Wins!`;
+                    }
                 }
-            }
-            
-            function showDefeatMessage(playersWon) {
-                 gameOverText.textContent = playersWon ? "Players Win!" : "Boss Wins!";
-                 gameOverText.className = playersWon ? 'win' : 'lose';
-                 gameOverOverlay.style.display = 'flex';
-            }
-            
-            function playAttackAnimation() {
-                const fireball = document.createElement('div');
-                fireball.className = 'attack-animation fireball';
-                fireball.textContent = '🔥';
-                const playerCard = document.querySelector('.player-card.current-player');
-                const startRect = playerCard ? playerCard.getBoundingClientRect() : {top: window.innerHeight - 50, left: window.innerWidth / 2};
-                const endRect = bossSprite.getBoundingClientRect();
-                const startX = startRect.left + startRect.width / 2;
-                const startY = startRect.top + startRect.height / 2;
-                const endX = endRect.left + endRect.width / 2;
-                const endY = endRect.top + endRect.height / 2;
-                fireball.style.position = 'fixed';
-                fireball.style.left = `${startX}px`;
-                fireball.style.top = `${startY}px`;
-                document.documentElement.style.setProperty('--target-x', `${endX - startX}px`);
-                document.documentElement.style.setProperty('--target-y', `${endY - startY}px`);
-                document.getElementById('animation-container').appendChild(fireball);
-                setTimeout(() => fireball.remove(), 700);
+                sortedPlayers.forEach(([uid, player], index) => {
+                    const item = document.createElement('div');
+                    item.className = 'score-item';
+                    if (index === 0 && sortedPlayers.length > 1 && sortedPlayers[0][1].score > sortedPlayers[1][1].score) item.classList.add('winner');
+                    item.innerHTML = `<span>${player.name}</span><span>${player.score} pts</span>`;
+                    finalScoresList.appendChild(item);
+                });
             }
 
         } catch (error) {
