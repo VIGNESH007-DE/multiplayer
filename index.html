@@ -303,8 +303,8 @@
 
         let currentUid = null;
         let currentRoomId = null;
-        let currentQuestionAnswer = '';
         let questionTimerInterval = null;
+        let isTimedOut = false;
         const QUESTION_TIME = 15000; // 15 seconds
 
         try {
@@ -385,27 +385,7 @@
             }
             
             async function setFirstQuestion(roomId) {
-                try {
-                    const allQuestionsRef = ref(db, 'questions');
-                    const snapshot = await get(allQuestionsRef);
-                    const questions = snapshot.val();
-                    if (!questions) throw new Error("No questions in bank");
-
-                    const questionIds = Object.keys(questions);
-                    const randomQuestionId = questionIds[Math.floor(Math.random() * questionIds.length)];
-                    const nextQuestion = questions[randomQuestionId];
-
-                    const roomRef = ref(db, `games/${roomId}`);
-                    await runTransaction(roomRef, (room) => {
-                        if(room) {
-                            room.currentQuestion = { text: nextQuestion.text, answer: nextQuestion.answer, startTime: serverTimestamp() };
-                            room.askedQuestions = { [randomQuestionId]: true };
-                        }
-                        return room;
-                    });
-                } catch (error) {
-                    console.error("Failed to set the first question:", error);
-                }
+                await setNextQuestion(roomId, true);
             }
             
             function listenToRoomState(roomId) {
@@ -420,6 +400,7 @@
 
                     const { gameState, bossHP, currentQuestion, players } = room;
 
+                    // Disconnect Logic
                     if (gameState === 'IN_PROGRESS' && Object.keys(players || {}).length < 2) {
                         if (players && players[currentUid]) {
                             const roomRef = ref(db, `games/${roomId}`);
@@ -475,12 +456,12 @@
             function renderFinalScores(players) {
                 finalScoresList.innerHTML = '';
                 if (!players) return;
-                const sortedPlayers = Object.values(players).sort((a, b) => b.score - a.score);
+                const sortedPlayers = Object.entries(players).sort((a, b) => b[1].score - a[1].score);
                 if(sortedPlayers.length > 0) {
-                    const winner = sortedPlayers[0];
-                    winnerAnnouncement.textContent = `${winner.name} Wins!`;
+                    const winnerName = sortedPlayers[0][1].name;
+                    winnerAnnouncement.textContent = `${winnerName} Wins!`;
                 }
-                sortedPlayers.forEach((player, index) => {
+                sortedPlayers.forEach(([uid, player], index) => {
                     const item = document.createElement('div');
                     item.className = 'score-item';
                     if (index === 0) item.classList.add('winner');
@@ -507,9 +488,9 @@
 
             function updateQuestion(question) {
                 clearInterval(questionTimerInterval);
-                if (question?.text) {
+                isTimedOut = false;
+                if (question?.text && question.text !== "Game is about to start...") {
                     questionText.textContent = question.text;
-                    currentQuestionAnswer = question.answer;
                     answerInput.disabled = false;
                     const startTime = question.startTime;
                     questionTimerInterval = setInterval(() => {
@@ -517,9 +498,11 @@
                         const remaining = QUESTION_TIME - elapsed;
                         const percentage = (remaining / QUESTION_TIME) * 100;
                         timerBar.style.width = `${Math.max(0, percentage)}%`;
-                        if (remaining <= 0) {
+                        if (remaining <= 0 && !isTimedOut) {
+                            isTimedOut = true;
                             clearInterval(questionTimerInterval);
                             answerInput.disabled = true;
+                            handleTimeout();
                         }
                     }, 100);
                 } else {
@@ -527,6 +510,18 @@
                     answerInput.disabled = true;
                     timerBar.style.width = '100%';
                 }
+            }
+            
+            function handleTimeout() {
+                const playerRef = ref(db, `games/${currentRoomId}/players/${currentUid}`);
+                runTransaction(playerRef, (player) => {
+                    if (player && !player.hasAnsweredThisRound) {
+                        player.hasAnsweredThisRound = true;
+                    }
+                    return player;
+                }).then(() => {
+                    checkRoundCompletionAndSetNextQuestion(currentRoomId);
+                });
             }
 
             function updateHpBar(element, percentage) {
@@ -540,6 +535,8 @@
                 e.preventDefault();
                 const submittedAnswer = answerInput.value.trim();
                 if (!submittedAnswer || answerInput.disabled) return;
+                
+                clearInterval(questionTimerInterval); // Stop timer on submit
                 
                 const questionRef = ref(db, `games/${currentRoomId}/currentQuestion`);
                 onValue(questionRef, (snapshot) => {
@@ -584,11 +581,13 @@
                     const room = roomSnapshot.val();
                     if (!room || room.gameState !== 'IN_PROGRESS' || !room.players) return;
                     const allAnswered = Object.values(room.players).every(p => p.hasAnsweredThisRound);
-                    if (allAnswered) setTimeout(() => setNextQuestion(roomId), 2000);
+                    if (allAnswered) {
+                        setTimeout(() => setNextQuestion(roomId), 2000); // Wait 2s before next question
+                    }
                 } catch (error) { console.error("Error checking round completion:", error); }
             }
 
-            async function setNextQuestion(roomId) {
+            async function setNextQuestion(roomId, isFirstQuestion = false) {
                 try {
                     const allQuestionsRef = ref(db, 'questions');
                     const questionsSnapshot = await get(allQuestionsRef);
@@ -597,7 +596,8 @@
 
                     const roomRef = ref(db, `games/${roomId}`);
                     await runTransaction(roomRef, (room) => {
-                        if (!room) return;
+                        if (!room || (room.gameState !== 'IN_PROGRESS' && !isFirstQuestion)) return;
+                        
                         const askedIds = room.askedQuestions ? Object.keys(room.askedQuestions) : [];
                         const unaskedQuestionIds = Object.keys(allQuestions).filter(id => !askedIds.includes(id));
 
@@ -607,8 +607,12 @@
                             room.currentQuestion = { text: nextQuestion.text, answer: nextQuestion.answer, startTime: serverTimestamp() };
                             if (!room.askedQuestions) room.askedQuestions = {};
                             room.askedQuestions[randomQuestionId] = true;
-                            for (const uid in room.players) room.players[uid].hasAnsweredThisRound = false;
+                            // Reset answer status for all players for the new round
+                            for (const uid in room.players) {
+                                room.players[uid].hasAnsweredThisRound = false;
+                            }
                         } else {
+                            // No more questions, end the game
                             room.gameState = 'FINISHED';
                         }
                         return room;
